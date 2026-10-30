@@ -20,6 +20,7 @@ export interface TournamentSummary {
   roundNumbers: number[];
   primaryColor: string | null;
   secondaryColor: string | null;
+  logoStorageKey: string | null;
 }
 
 /** One audit event as shown in the history panel. */
@@ -70,6 +71,7 @@ export async function getTournamentSummary(tournamentId: string, database: Datab
     roundNumbers: tournament.rounds.map((round) => round.roundNumber),
     primaryColor: tournament.primaryColor,
     secondaryColor: tournament.secondaryColor,
+    logoStorageKey: tournament.logoStorageKey,
   };
 }
 

@@ -8,6 +8,7 @@ import { requirePageUser } from "@/server/auth/page-guards";
 import { loadOrNotFound } from "@/server/http/page-data-loaders";
 import { getTournamentSummary, listResultCodes } from "@/server/services/game-query-service";
 import { getTournamentSettings } from "@/server/services/tournament-service";
+import { LogoUploader } from "@/components/logo-uploader";
 import { PageShell } from "@/components/page-shell";
 import { ResultCodeManager } from "@/components/result-code-manager";
 import { TournamentForm } from "@/components/tournament-form";
@@ -41,6 +42,13 @@ export default async function TournamentSettingsPage({ params }: { params: Promi
             primaryColor: tournamentSettings.primaryColor ?? "#1d4ed8",
             secondaryColor: tournamentSettings.secondaryColor ?? "#1e3a8a",
           }}
+        />
+      </section>
+      <section className="mb-8">
+        <h2 className="mb-2 text-lg font-semibold">{vi.logo.heading}</h2>
+        <LogoUploader
+          tournamentId={tournamentId}
+          logoUrl={tournamentSummary.logoStorageKey ? `/api/tournaments/${tournamentId}/logo?v=${encodeURIComponent(tournamentSummary.logoStorageKey)}` : null}
         />
       </section>
       <section className="mb-8">
