@@ -58,19 +58,24 @@ export async function runIdempotentOperation(
     return existingResponse;
   }
   try {
-    return await prisma.$transaction(async (transaction) => {
-      const response = await operation(transaction);
-      await transaction.idempotencyRecord.create({
-        data: {
-          userId: requestIdentity.userId,
-          idempotencyKey: requestIdentity.idempotencyKey,
-          requestHash: requestIdentity.requestHash,
-          responseStatus: response.status,
-          responseBody: response.body,
-        },
-      });
-      return response;
-    });
+    return await prisma.$transaction(
+      async (transaction) => {
+        const response = await operation(transaction);
+        await transaction.idempotencyRecord.create({
+          data: {
+            userId: requestIdentity.userId,
+            idempotencyKey: requestIdentity.idempotencyKey,
+            requestHash: requestIdentity.requestHash,
+            responseStatus: response.status,
+            responseBody: response.body,
+          },
+        });
+        return response;
+      },
+      // Prisma's default 5 s timeout is too short for a whole-round import (up to ~100 boards, SRS-IMP-10),
+      // which must still run as one transaction.
+      { maxWait: 10_000, timeout: 60_000 },
+    );
   } catch (error) {
     // A concurrent duplicate committed first: our transaction rolled back, so return the winner's response.
     if (isUniqueConstraintViolation(error)) {
