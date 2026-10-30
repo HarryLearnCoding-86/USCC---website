@@ -66,7 +66,7 @@ export interface E2eTournament {
  * Creates a one-round tournament with boards 1..boardCount through the TD API.
  *
  * @param technicalRequest - Request context signed in as the TD.
- * @param boardCount - Number of two-player boards (default 1).
+ * @param boardCount - Number of two-player boards (default 1; 0 leaves the round empty for import tests).
  * @returns Tournament ID, boards with game IDs and names, and result code IDs.
  */
 export async function createE2eTournament(technicalRequest: APIRequestContext, boardCount = 1): Promise<E2eTournament> {
@@ -94,11 +94,10 @@ export async function createE2eTournament(technicalRequest: APIRequestContext, b
   }
   const resultCodesResponse = await technicalRequest.get(`/api/tournaments/${tournamentId}/result-codes`);
   const { resultCodes } = (await resultCodesResponse.json()) as { resultCodes: { id: string; code: string }[] };
-  const firstBoard = boards[0] as E2eBoard;
   return {
     tournamentId,
-    whitePlayerName: firstBoard.whitePlayerName,
-    blackPlayerName: firstBoard.blackPlayerName,
+    whitePlayerName: boards[0]?.whitePlayerName ?? "",
+    blackPlayerName: boards[0]?.blackPlayerName ?? "",
     boards,
     resultCodeIdByCode: Object.fromEntries(resultCodes.map((resultCode) => [resultCode.code, resultCode.id])),
   };
