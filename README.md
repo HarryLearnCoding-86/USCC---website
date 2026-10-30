@@ -92,7 +92,13 @@ stateDiagram-v2
   OFFICIAL --> REOPENED: reopen(reason) TD
   OFFICIAL --> PENDING: editResult(code, reason) TD
   DISPUTED --> PENDING: editResult(code, reason) TD
+  PENDING --> NONE: cancel(reason) TD
+  DISPUTED --> NONE: cancel(reason) TD
+  OFFICIAL --> NONE: cancel(reason) TD
+  REOPENED --> NONE: cancel(reason) TD
 ```
+
+`editResult` is also allowed from PENDING and REOPENED (back to PENDING); `editResult` and `cancel` are never allowed from NONE. Every TD reason (approve, reopen, edit, cancel) must be at least 5 characters (SRS-SM-05 to SRS-SM-08).
 
 Every transition checks and increments `version` (409 on a stale version), writes a `result_events` row, and fires `NOTIFY result_changed`, all in one transaction. `result_events` is append-only, enforced by a database trigger.
 
@@ -283,7 +289,7 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 
 **Conflicts between documents** (AGENT_PROMPT.md wins per CLAUDE.md, flagged for a decision):
 
-- The SRS state machine adds `cancel(reason)` → NONE, limits `edit` to "any state except NONE", and requires reasons of at least 5 characters. AGENT_PROMPT §3.3 has no cancel and allows edit from "any". This must be decided before Phase 2.
+- *Resolved 2026-10-30:* the SRS state-machine rules are adopted: `cancel(reason)` → NONE is added, `edit` is allowed from any state except NONE, and TD reasons need at least 5 characters. AGENT_PROMPT §3.3 has been updated to match.
 - The SRS lists login rate limiting (SRS-AUTH-05) and a CSRF token (SRS §10.2) as auth requirements; AGENT_PROMPT schedules them for Phase 5. Phase 1 ships an `Origin` check plus `SameSite=Lax` as the interim CSRF defence, and **no login rate limiting yet**.
 
 **Current limitations:**

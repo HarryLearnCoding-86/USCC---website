@@ -97,9 +97,11 @@ From	Action	Actor	To	Notes
 NONE / REOPENED	submitResult	RECORDER or TECHNICAL	PENDING	Clears both confirmations.
 PENDING	confirmBySide(WHITE or BLACK)	player on recorder's phone	PENDING, or OFFICIAL when both sides have confirmed	Each side can confirm once.
 PENDING	rejectBySide	player on recorder's phone	DISPUTED	Never published.
-PENDING / DISPUTED	approveException(reason)	TECHNICAL	OFFICIAL	Reason is mandatory. Logs actor and time.
-OFFICIAL	reopen(reason)	TECHNICAL	REOPENED	Reason is mandatory.
-any	editResult(newCode, reason)	TECHNICAL	PENDING	Requires reconfirmation or approveException.
+PENDING / DISPUTED	approveException(code?, reason)	TECHNICAL	OFFICIAL	Reason is mandatory (≥ 5 characters). Logs actor and time.
+OFFICIAL	reopen(reason)	TECHNICAL	REOPENED	Reason is mandatory (≥ 5 characters).
+any except NONE	editResult(newCode, reason)	TECHNICAL	PENDING	Reason ≥ 5 characters; clears both confirmations. Requires reconfirmation or approveException.
+any except NONE	cancel(reason)	TECHNICAL	NONE	Reason ≥ 5 characters; clears result code and confirmations.
+Decision 2026-10-30 (product owner): the SRS §7 rules SRS-SM-05, 07 and 08 are adopted. Cancel is added, edit is not allowed from NONE, and every TD reason must be at least 5 characters.
 Rules:
 Result codes with requiresPlayerConfirmation = false (for example, a bye) go straight to OFFICIAL on submit by a TD. They must never be displayed as "confirmed by both players".
 Every transition runs in one DB transaction. It checks version (optimistic lock), increments it, writes a ResultEvent, and fires NOTIFY result_changed.
