@@ -30,6 +30,7 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "argon2": "^0.41.1",
+    "exceljs": "^4.4.0",
     "idb": "^8.0.4",
     "next": "^15.5.0",
     "pg": "^8.23.1",
