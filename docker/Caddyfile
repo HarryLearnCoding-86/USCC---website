@@ -1,0 +1,32 @@
+# docker/Caddyfile
+# Caddy reverse proxy configuration for production (Phase 5).
+# Automatically obtains and renews TLS certificates via Let's Encrypt.
+# Replace {$DOMAIN} with your actual domain or set the DOMAIN env var.
+
+{$DOMAIN} {
+    reverse_proxy localhost:3000
+
+    # Enable gzip and zstd compression.
+    encode gzip zstd
+
+    # Security headers.
+    header {
+        # Remove server identification.
+        -Server
+        # HSTS: 1 year, include subdomains.
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        # Prevent clickjacking.
+        X-Frame-Options "SAMEORIGIN"
+        # Prevent MIME-type sniffing.
+        X-Content-Type-Options "nosniff"
+        # Referrer policy.
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Log access to stdout for Docker log collection.
+    log {
+        output stdout
+        format json
+    }
+}
+

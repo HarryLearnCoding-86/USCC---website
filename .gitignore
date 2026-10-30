@@ -1,0 +1,44 @@
+# Git-ignore rules for USCC Referee Results Web
+# ──────────────────────────────────────────────
+
+# Environment secrets
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Node modules
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Prisma generated client (regenerate with pnpm db:generate)
+# Keep migrations in VCS; ignore the generated JS client.
+
+# Test outputs
+coverage/
+playwright-report/
+test-results/
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# pnpm lock (keep pnpm-lock.yaml in VCS)
+
+
+# TypeScript incremental build info
+*.tsbuildinfo
