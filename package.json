@@ -30,7 +30,9 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "argon2": "^0.41.1",
+    "idb": "^8.0.4",
     "next": "^15.5.0",
+    "pg": "^8.23.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zod": "^3.23.8"
@@ -39,6 +41,7 @@
     "@eslint/eslintrc": "^3.2.0",
     "@playwright/test": "^1.49.0",
     "@types/node": "^22.9.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "autoprefixer": "^10.4.20",
