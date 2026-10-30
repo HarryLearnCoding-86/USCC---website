@@ -2,7 +2,8 @@
 // Mobile result entry and two-player confirmation on the recorder's phone (AGENT_PROMPT.md §3.5, SRS-RES, SRS-CONF):
 // choose a code → review → submit → White's step → Black's step → final status. Each step shows only that player's
 // name and side, locks after one tap (SRS-CONF-05), and the flow resumes at the first unconfirmed side when the
-// page is reopened (SRS-CONF-09). A stale version shows the server's 409 message with a reload button.
+// page is reopened (SRS-CONF-09). A stale version shows the server's 409 message with a reload button. When the
+// network is down, actions are queued (SRS-SYNC-01) and the flow continues on a state-machine prediction.
 
 "use client";
 
@@ -10,7 +11,9 @@ import type { Role } from "@prisma/client";
 import Link from "next/link";
 import { useState } from "react";
 import { vi } from "@/i18n/vi";
-import { readApiErrorMessage, sendJsonMutation } from "@/client/api-request";
+import { readApiErrorMessage } from "@/client/api-request";
+import { sendMutationWithOfflineFallback } from "@/client/offline/offline-sync-runtime";
+import { predictGameAfterAction, type QueueableResultAction } from "@/client/offline/predict-game-after-action";
 import { formatScoreLine } from "@/server/domain/result-display";
 import type { PlayerSide } from "@/server/domain/result-state-machine";
 import type { GameView, ResultCodeView } from "@/server/services/game-view-mapper";
@@ -69,6 +72,7 @@ export function selectAvailableResultCodes(resultCodes: ResultCodeView[], game: 
  * @param props.initialGame - Game as loaded by the server.
  * @param props.resultCodes - Active codes of the tournament.
  * @param props.viewerRole - Role of the signed-in arbiter.
+ * @param props.viewerUsername - Username of the signed-in arbiter (for offline predictions).
  * @param props.roundListHref - Where "Về danh sách" goes.
  * @returns The current screen.
  */
@@ -76,29 +80,61 @@ export function ResultRecordingFlow({
   initialGame,
   resultCodes,
   viewerRole,
+  viewerUsername,
   roundListHref,
 }: {
   initialGame: GameView;
   resultCodes: ResultCodeView[];
   viewerRole: Role;
+  viewerUsername: string;
   roundListHref: string;
 }) {
   const [game, setGame] = useState(initialGame);
   const [screen, setScreen] = useState<FlowScreen>(() => findInitialFlowScreen(initialGame, viewerRole));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasQueuedActions, setHasQueuedActions] = useState(false);
 
-  async function postGameAction(actionPath: string, requestBody: Record<string, unknown>): Promise<GameView | null> {
+  /**
+   * Sends one recorder action. When the network is down the action is queued (SRS-SYNC-01) and the flow continues
+   * on a prediction made by the same state machine the server uses, so White and Black can still confirm.
+   */
+  async function postGameAction(
+    actionPath: "result" | "confirm",
+    requestBody: Record<string, unknown>,
+    queueableAction: QueueableResultAction,
+    description: string,
+  ): Promise<GameView | null> {
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      const result = await sendJsonMutation<{ game: GameView }>("POST", `/api/games/${game.gameId}/${actionPath}`, { ...requestBody, version: game.result.version });
-      if (!result.isOk) {
-        setErrorMessage(readApiErrorMessage(result.body, vi.common.error));
+      const outcome = await sendMutationWithOfflineFallback({
+        httpMethod: "POST",
+        path: `/api/games/${game.gameId}/${actionPath}`,
+        requestBody: { ...requestBody, version: game.result.version },
+        description,
+      });
+      if (outcome.kind === "SENT") {
+        if (!outcome.isOk) {
+          setErrorMessage(readApiErrorMessage(outcome.body, vi.common.error));
+          return null;
+        }
+        const updatedGame = (outcome.body as { game: GameView }).game;
+        setGame(updatedGame);
+        return updatedGame;
+      }
+      if (outcome.kind === "STORAGE_UNAVAILABLE") {
+        setErrorMessage(vi.offlineQueue.storageUnavailable);
         return null;
       }
-      setGame(result.body.game);
-      return result.body.game;
+      const predictedGame = predictGameAfterAction(game, queueableAction, resultCodes, { username: viewerUsername, role: viewerRole }, new Date());
+      if (!predictedGame) {
+        setErrorMessage(vi.resultErrors.invalidTransition);
+        return null;
+      }
+      setHasQueuedActions(true);
+      setGame(predictedGame);
+      return predictedGame;
     } catch {
       setErrorMessage(vi.apiErrors.serverError);
       return null;
@@ -120,7 +156,12 @@ export function ResultRecordingFlow({
   }
 
   async function submitChosenResult(resultCode: ResultCodeView) {
-    const updatedGame = await postGameAction("result", { resultCodeId: resultCode.id });
+    const updatedGame = await postGameAction(
+      "result",
+      { resultCodeId: resultCode.id },
+      { type: "SUBMIT_RESULT", resultCodeId: resultCode.id },
+      vi.offlineQueue.actionDescriptions.submitResult(game.boardNumber),
+    );
     if (!updatedGame) return;
     setScreen(updatedGame.result.status === "PENDING" ? { kind: "CONFIRM_STEP", side: "WHITE", decision: null } : { kind: "FINAL" });
   }
@@ -128,7 +169,15 @@ export function ResultRecordingFlow({
   async function recordPlayerDecision(side: PlayerSide, decision: "CONFIRM" | "REJECT") {
     // SRS-CONF-05: lock the step on the first tap, before the network round trip.
     setScreen({ kind: "CONFIRM_STEP", side, decision });
-    const updatedGame = await postGameAction("confirm", { side, decision });
+    const sideLabel = side === "WHITE" ? vi.record.whiteLabel : vi.record.blackLabel;
+    const updatedGame = await postGameAction(
+      "confirm",
+      { side, decision },
+      decision === "CONFIRM" ? { type: "CONFIRM_BY_SIDE", side } : { type: "REJECT_BY_SIDE", side },
+      decision === "CONFIRM"
+        ? vi.offlineQueue.actionDescriptions.confirmResult(game.boardNumber, sideLabel)
+        : vi.offlineQueue.actionDescriptions.rejectResult(game.boardNumber, sideLabel),
+    );
     if (!updatedGame) {
       setScreen({ kind: "CONFIRM_STEP", side, decision: null });
       return;
@@ -143,6 +192,11 @@ export function ResultRecordingFlow({
       <header className="rounded-lg bg-white p-3 text-center">
         <p className="text-sm text-gray-600">{vi.record.roundAndBoard(game.roundNumber, game.boardNumber)}</p>
       </header>
+      {hasQueuedActions && (
+        <p role="status" data-testid="queued-notice" className="rounded-md bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900">
+          {vi.offlineQueue.queuedNotice}
+        </p>
+      )}
       {screen.kind === "CHOOSE" && (
         <ChooseResultScreen
           resultCodes={selectAvailableResultCodes(resultCodes, game, viewerRole)}

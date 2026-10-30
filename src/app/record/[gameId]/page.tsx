@@ -28,6 +28,7 @@ export default async function RecordGamePage({ params }: { params: Promise<{ gam
           initialGame={game}
           resultCodes={resultCodes.filter((resultCode) => resultCode.isActive)}
           viewerRole={signedInUser.role}
+          viewerUsername={signedInUser.username}
           roundListHref={`/tournaments/${game.tournamentId}/rounds/${game.roundNumber}`}
         />
       </div>

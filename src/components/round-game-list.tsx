@@ -1,7 +1,7 @@
 // src/components/round-game-list.tsx
 // Round pairing list for both roles (SRS-LOOK-01..04): search by board, name (diacritics ignored) or player ID,
 // filter by status, and one tap per game to the record page, so a recorder reaches entry in ≤ 3 taps.
-// Phone-first card layout; live updates arrive in Phase 3, until then "Làm mới" reloads.
+// Phone-first card layout. The page re-renders live through LiveRefresh; "Làm mới" forces a reload.
 
 "use client";
 
