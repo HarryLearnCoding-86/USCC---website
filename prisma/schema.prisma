@@ -32,6 +32,12 @@ enum ResultStatus {
   REOPENED
 }
 
+/// Board side of a player; used to record which side disputed a result (SRS-TD-02).
+enum PlayerSide {
+  WHITE
+  BLACK
+}
+
 /// Whether a round's pairings have been published to arbiters.
 enum RoundStatus {
   UNPUBLISHED
@@ -227,6 +233,9 @@ model Result {
   enteredByUserId  String?      @map("entered_by_user_id")
   approvedByUserId String?      @map("approved_by_user_id")
   approvalReason   String?      @map("approval_reason")
+  /// Which player pressed "Không đồng ý" and when; drives the oldest-first dispute queue (SRS-TD-02).
+  disputedBySide   PlayerSide?  @map("disputed_by_side")
+  disputedAt       DateTime?    @map("disputed_at") @db.Timestamptz
   version          Int          @default(0)
   createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz
