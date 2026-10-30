@@ -22,6 +22,11 @@ export function AppHeader({ signedInUser }: { signedInUser: SignedInUser }) {
           <Link href="/" className="font-semibold text-brand-primary">
             {vi.common.appName}
           </Link>
+          {hasPermission(signedInUser.role, "MANAGE_TOURNAMENTS") && (
+            <Link href="/tournaments" className="text-sm text-gray-700 underline-offset-2 hover:underline">
+              {vi.nav.tournaments}
+            </Link>
+          )}
           {hasPermission(signedInUser.role, "MANAGE_ACCOUNTS") && (
             <Link href="/admin/users" className="text-sm text-gray-700 underline-offset-2 hover:underline">
               {vi.nav.users}

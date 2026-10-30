@@ -13,6 +13,24 @@ export interface ApiRequestResult<TResponseBody> {
 export interface ApiErrorResponseBody {
   code: string;
   messageVi: string;
+  details?: unknown;
+}
+
+/**
+ * Picks the most specific Vietnamese message from an error body: the first field-level message when the
+ * server sent validation details, otherwise the top-level message.
+ *
+ * @param responseBody - Parsed JSON of a failed response.
+ * @param fallbackMessage - Used when the body has no message (e.g. a proxy error page).
+ * @returns Message to show the arbiter.
+ */
+export function readApiErrorMessage(responseBody: unknown, fallbackMessage: string): string {
+  const errorBody = responseBody as Partial<ApiErrorResponseBody> | null;
+  const firstDetail = Array.isArray(errorBody?.details) ? (errorBody.details[0] as { message?: unknown } | undefined) : undefined;
+  if (typeof firstDetail?.message === "string") {
+    return firstDetail.message;
+  }
+  return typeof errorBody?.messageVi === "string" ? errorBody.messageVi : fallbackMessage;
 }
 
 /**
@@ -36,13 +54,13 @@ export function generateIdempotencyKey(): string {
 /**
  * Sends a JSON mutation (POST/PATCH/DELETE) with a new Idempotency-Key.
  *
- * @param httpMethod - "POST", "PATCH" or "DELETE".
+ * @param httpMethod - "POST", "PUT", "PATCH" or "DELETE".
  * @param path - Same-origin API path, e.g. "/api/users".
  * @param requestBody - JSON-serialisable body, or undefined for none.
  * @returns The status and parsed body; network failures reject the promise.
  */
 export async function sendJsonMutation<TResponseBody>(
-  httpMethod: "POST" | "PATCH" | "DELETE",
+  httpMethod: "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   requestBody?: unknown,
 ): Promise<ApiRequestResult<TResponseBody>> {
