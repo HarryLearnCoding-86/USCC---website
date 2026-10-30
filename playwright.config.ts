@@ -1,7 +1,7 @@
 // playwright.config.ts
 // Playwright end-to-end configuration. Runs against `pnpm dev` and the seeded dev database
-// (pnpm db:seed). Viewports follow CLAUDE.md: mobile 390×844 for recorder flows, desktop 1440×900 for the TD;
-// the 1920×1080 projection project is added in Phase 3.
+// (pnpm db:seed). Viewports follow CLAUDE.md: mobile 390×844 for recorder flows, desktop 1440×900 for the TD,
+// and 1920×1080 for the projection screen (projection-*.spec.ts run only there).
 
 import { defineConfig, devices } from "@playwright/test";
 
@@ -30,8 +30,9 @@ export default defineConfig({
     timezoneId: "Asia/Ho_Chi_Minh",
   },
   projects: [
-    { name: "mobile", use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } } },
-    { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
+    { name: "mobile", testIgnore: /projection-.*\.spec\.ts/, use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } } },
+    { name: "desktop", testIgnore: /(projection|offline)-.*\.spec\.ts/, use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
+    { name: "projection", testMatch: /projection-.*\.spec\.ts/, use: { ...devices["Desktop Chrome"], viewport: { width: 1920, height: 1080 } } },
   ],
   webServer: {
     command: "pnpm dev",
