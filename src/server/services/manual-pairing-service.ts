@@ -15,6 +15,7 @@ import {
   type PlayerResolution,
 } from "@/server/domain/manual-pairing-rules";
 import { ApiError } from "@/server/http/api-error";
+import { notifyTournamentChanged } from "@/server/services/change-notifier";
 import { getGameView } from "@/server/services/game-query-service";
 import type { GameView } from "@/server/services/game-view-mapper";
 import type { ManualPairingInput } from "@/server/validation/phase-two-input-schemas";
@@ -83,6 +84,7 @@ export async function saveManualBoard(target: ManualBoardTarget, pairingInput: M
   const savedGame = existingGame
     ? await database.game.update({ where: { id: existingGame.id }, data: gameData })
     : await database.game.create({ data: { ...gameData, roundId: round.id, result: { create: { status: "NONE" } } } });
+  await notifyTournamentChanged({ tournamentId: target.tournamentId, roundNumber: target.roundNumber }, database);
   return getGameView(savedGame.id, database);
 }
 
@@ -109,6 +111,7 @@ export async function deleteManualBoard(target: ManualBoardTarget & { originalBo
     throw new ApiError(409, "GAME_HAS_HISTORY", vi.manualPairing.gameHasHistory);
   }
   await database.game.delete({ where: { id: game.id } });
+  await notifyTournamentChanged({ tournamentId: target.tournamentId, roundNumber: target.roundNumber }, database);
 }
 
 /**

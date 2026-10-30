@@ -6,6 +6,7 @@
 import { vi } from "@/i18n/vi";
 import type { DatabaseClient } from "@/server/database/database-client";
 import { ApiError } from "@/server/http/api-error";
+import { notifyTournamentChanged } from "@/server/services/change-notifier";
 import { toResultCodeView, type ResultCodeView } from "@/server/services/game-view-mapper";
 import { isUniqueConstraintViolation } from "@/server/services/idempotency-service";
 import type { CreateResultCodeInput, UpdateResultCodeInput } from "@/server/validation/phase-two-input-schemas";
@@ -63,7 +64,10 @@ export async function updateResultCode(
   }
   const changedFields = Object.fromEntries(Object.entries(updateInput).filter(([, fieldValue]) => fieldValue !== undefined));
   try {
-    return toResultCodeView(await database.resultCode.update({ where: { id: resultCodeId }, data: changedFields }));
+    const updatedResultCode = toResultCodeView(await database.resultCode.update({ where: { id: resultCodeId }, data: changedFields }));
+    // A relabelled code changes what the projection shows for official results.
+    await notifyTournamentChanged({ tournamentId }, database);
+    return updatedResultCode;
   } catch (error) {
     if (isUniqueConstraintViolation(error)) {
       throw new ApiError(409, "RESULT_CODE_TAKEN", vi.resultCodes.codeTaken);
