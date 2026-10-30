@@ -2,7 +2,7 @@
 
 Internal web app for **USCC** (a chess club in Ho Chi Minh City) that lets arbiters run tournament results without printed pairing lists.
 
-> **Status: Phase 1 (Foundation) complete.** Accounts, login/logout, sessions, role guards, account management, database schema, seed data. Result entry, projection, import and export come in Phases 2–5 (see [AGENT_PROMPT.md](AGENT_PROMPT.md) §4). Sections below mark features that are not built yet as *(Phase N)*.
+> **Status: Phase 2 (Result lifecycle) complete.** Phase 1 (accounts, sessions, role guards) plus tournament settings and result codes, manual pairing entry, the round list with search, the mobile recording flow with two-player confirmation, and the TD console. Projection, offline queue, import/export and deployment hardening come in Phases 3–5 (see [AGENT_PROMPT.md](AGENT_PROMPT.md) §4). Sections below mark features that are not built yet as *(Phase N)*.
 
 ---
 
@@ -31,13 +31,13 @@ Internal web app for **USCC** (a chess club in Ho Chi Minh City) that lets arbit
 | Role | Feature | Status |
 |---|---|---|
 | Both | Login / logout; sessions end after 16 h of inactivity | ✅ Phase 1 |
-| Both | Tournament list on the home page | ✅ Phase 1 (read-only) |
+| Both | Home page with tournaments and links to each round | ✅ Phase 2 |
 | TD | Account management: create, deactivate, reactivate, reset password | ✅ Phase 1 |
-| TD | Tournament settings, branding, result codes | Phase 2 |
-| TD | Manual pairing entry | Phase 2 |
-| Both | Pairing list with search by board, name (diacritics ignored) or player ID | Phase 2 |
-| Both | Result entry and two-player confirmation on the recorder's phone | Phase 2 |
-| TD | Console: dispute queue, approve / edit / cancel / reopen with reason, audit history | Phase 2 |
+| TD | Create tournaments; edit details, colours (contrast warning) and result codes | ✅ Phase 2 (logo upload: Phase 3) |
+| TD | Manual pairing entry | ✅ Phase 2 |
+| Both | Pairing list with search by board, name (diacritics ignored) or player ID | ✅ Phase 2 |
+| Both | Result entry and two-player confirmation on the recorder's phone | ✅ Phase 2 |
+| TD | Console: dispute queue, approve / edit / cancel / reopen with reason, audit history | ✅ Phase 2 |
 | TD | Live projection screen (official results within 5 s) | Phase 3 |
 | Recorder | Offline queue with "Chưa đồng bộ (N)" badge | Phase 3 |
 | TD | Excel import wizard (mapping, preview, row/column errors, diff) | Phase 4 |
@@ -109,7 +109,11 @@ src/
   app/                  routes and route handlers only (no business logic)
     api/auth/           login, logout (the only public API route is login)
     api/users/          account management API (TD)
+    api/tournaments/    tournaments, result codes, round games and manual boards
+    api/games/          one game, its history, and the six result actions
     admin/users/        account management page (TD)
+    tournaments/        TD list; [id]/settings, [id]/console, [id]/rounds/[n] and /manual
+    record/[gameId]/    mobile result entry and two-player confirmation
     login/  forbidden/  public login page; access-denied page
   components/           presentational React components
   client/               browser-only helpers (API calls with Idempotency-Key; offline queue in Phase 3)
@@ -120,8 +124,10 @@ src/
     config/             validated environment variables
     database/           shared Prisma client and transaction client type
     domain/             pure business rules (no DB, no HTTP)
-    http/               ApiError and the route-handler wrapper
-    services/           DB-backed use cases (auth, accounts, idempotency, queries)
+    http/               ApiError, the route-handler wrapper, result-action route factory, page loaders
+    services/           DB-backed use cases: auth, accounts, idempotency, tournaments, result codes,
+                        manual pairings, the result lifecycle, game queries
+    validation/         Zod schemas for Phase 2 request bodies and queries
     import/ export/ realtime/   Phases 3–4
 prisma/                 schema.prisma, migrations/, seed.ts
 tests/
@@ -222,13 +228,50 @@ Older `.env` files may still contain `SESSION_SECRET`, `SESSION_MAX_AGE_SECONDS`
 
 The first TD account comes from the seed script in development. For production, see §9.
 
-**Create a tournament, enter or import pairings, run the console, open the projection screen, export Excel** *(Phases 2–4)*: these steps will be written as each phase lands.
+**Create a tournament**
+1. Click **Giải đấu** in the header (`/tournaments`).
+2. Fill in **Tạo giải đấu mới**: name, dates, venue, organizer, number of rounds (1–20), timezone and colours. A yellow note warns when a colour gives white text a contrast below 4.5:1. Click **Tạo giải đấu**.
+3. You land on the settings page. Rounds 1..n exist, and the nine default result codes are listed under **Mã kết quả**. **Confirm or adjust the codes before round 1** (OI-03): edit a row and click **Lưu**, **Ẩn** a code you do not use, or add one with **Thêm mã**. A code already used by a result can only be hidden, relabelled, re-ordered or given a new Swiss-Manager value.
+
+**Enter pairings manually** (until the importer lands in Phase 4)
+1. On the settings page, under **Nhập cặp đấu**, click the round.
+2. For each board, enter the board number, then White's Swiss-Manager ID, name, club and points before the round, and the same for Black. Leave Black's name empty for a bye. Click **Lưu bàn**.
+3. Players are matched by ID first. Without an ID, a name matches only if exactly one existing player has it. The form refuses, with a Vietnamese message:
+   - an ID that belongs to a differently named player,
+   - a name shared by several players,
+   - a player already on another board,
+   - a duplicate board number.
+
+   Players are never merged automatically.
+4. **Sửa** edits a board, and **Xóa** deletes one. A board whose result is not "Chưa có kết quả" cannot be changed: cancel the result in the console first.
+
+**Resolve results in the console** (`/tournaments/[id]/console`)
+1. Pick the round. The counters show games per status.
+2. **Hàng chờ bất đồng** lists disputed results across all rounds, oldest first, with who disagreed and when.
+3. Click **Xử lý** on a game. Depending on its status you can:
+   - **Duyệt ngoại lệ**: approve as an exception, optionally choosing another code;
+   - **Sửa kết quả**: pick a new code; the players must confirm again;
+   - **Mở lại**: reopen an official result;
+   - **Hủy kết quả**: cancel, back to "Chưa có kết quả".
+
+   Every action needs a reason of at least 5 characters.
+4. **Lịch sử thay đổi** lists every event for the game: time in the tournament timezone, account, action, old → new status and reason.
+5. Byes and forfeits: open **Mở trang ghi kết quả** and choose the code. It becomes official at once and is never shown as confirmed by both players.
+
+**Open the projection screen, import Excel, export Excel** *(Phases 3–4)*.
 
 ### Recorder
 
 1. Sign in at `/login` on your phone with a RECORDER account.
-2. The home page lists tournaments and their rounds.
-3. Find a board, enter the result and run the two-player confirmation *(Phase 2)*.
+2. On the home page, tap the round. Search by board number, a player's ID, or a name. Diacritics are optional: "nguyen van an" finds "Nguyễn Văn Ân".
+3. Tap the board, then tap the result (e.g. **1 – 0 Trắng thắng**).
+4. Read the review screen back: White, Black, the score and the result in words. Tap **Gửi cho kỳ thủ xác nhận**, or **Sửa** to choose again.
+5. **Check you have the right player, then hand the phone to White.** White's screen shows only White's name, the side and the result. White taps **Xác nhận** or **Không đồng ý**. The buttons lock after one tap.
+6. Tap **Tiếp tục: đưa máy cho kỳ thủ Đen** and hand the phone to Black, who does the same.
+7. The final screen shows the status. Two confirmations make it **Chính thức**. Any "Không đồng ý" makes it **Có bất đồng** and sends it to the TD. Tap **Về danh sách**.
+8. If the page closes mid-flow, open the board again: it resumes at the first player who has not confirmed yet.
+9. If another arbiter changed the board meanwhile, you see "Kết quả đã thay đổi. Vui lòng tải lại." Tap **Tải lại**.
+10. Byes and forfeits are entered by the TD only.
 
 ## 8. Testing
 
@@ -236,9 +279,9 @@ The first TD account comes from the seed script in development. For production, 
 |---|---|---|
 | `pnpm lint` | ESLint (Next.js + TypeScript rules, zero warnings allowed) | — |
 | `pnpm typecheck` | `tsc --noEmit` in strict mode | — |
-| `pnpm test:unit` | Vitest, `tests/unit`: session tokens, argon2 hashing, the SRS §4.1 permission matrix cell by cell, origin check, Zod input schemas, deactivation rules, date formatting, default result codes, idempotency keys | — |
-| `pnpm test:integration` | Creates and migrates `TEST_DATABASE_URL`, then Vitest `tests/integration`: login and sessions (expiry, sliding refresh, deactivation lockout), account management (last-TD rule, session termination), idempotency (replay, concurrent duplicates, reused key), real `/api/users` and `/api/auth/login` handlers (401, 403, CSRF origin, missing key, cookie flags), and the append-only trigger on `result_events` | Docker PostgreSQL |
-| `pnpm test:e2e` | Playwright on mobile (390×844) and desktop (1440×900): anonymous redirect, 401 API, wrong password, TD login → accounts → logout, recorder blocked from accounts | Docker PostgreSQL, `pnpm db:seed`; starts `pnpm dev` itself if not running |
+| `pnpm test:unit` | Vitest, `tests/unit`: **every result action × status × role against the SRS §7 table**, confirmation guards, byes and TD reasons; session tokens, argon2, the SRS §4.1 permission matrix, origin check, Zod schemas, deactivation rules, date formatting, ½ display, diacritic-free search, contrast, manual pairing rules, default result codes, idempotency keys | — |
+| `pnpm test:integration` | Creates and migrates `TEST_DATABASE_URL`, then Vitest `tests/integration`: sessions, accounts, idempotency, real route handlers (401, 403, origin, missing key, cookie flags, recorder 403s on TD routes, idempotent confirmation retry), the append-only trigger on `result_events`; the result lifecycle (full confirmation flow, dispute → approval, stale version 409, two simultaneous submits → one wins, byes, hidden codes, reopen/edit/cancel with audit rows); round sync, result-code protection, manual pairing validation, round search, dispute queue order | Docker PostgreSQL |
+| `pnpm test:e2e` | Playwright on mobile (390×844) and desktop (1440×900): auth flows; **recorder enters result → White confirms → Black confirms → OFFICIAL**; **Black rejects → DISPUTED → TD approves with reason** (with history); TD creates a tournament and enters boards in the UI (desktop only) | Docker PostgreSQL, `pnpm db:seed`; starts `pnpm dev` itself if not running |
 | `pnpm test:all` | unit + integration + e2e | all of the above |
 
 Run `pnpm exec playwright install chromium` once before the first e2e run. Failure traces, screenshots and videos are saved in `test-results/`, and the HTML report in `playwright-report/`. The `.docx` test-run report generator (TEST_AGENT_PROMPT.md) is not built yet.
@@ -271,7 +314,7 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 
 **Timezone.** Each tournament has an IANA timezone, `Asia/Ho_Chi_Minh` by default. Timestamps are stored as `timestamptz` (UTC) and displayed as `DD/MM/YYYY HH:mm` (24-hour) in that zone. Tournament start and end dates are calendar dates (`DATE`).
 
-**Branding.** Each tournament has a primary and secondary colour (applied through the CSS variables `--brand-primary` and `--brand-secondary`) and a logo *(editing UI in Phase 2)*.
+**Branding.** Each tournament has a primary and secondary colour, edited on the settings page with a contrast warning below 4.5:1. They are applied through the CSS variables `--brand-primary` and `--brand-secondary` on the projection screen *(Phase 3)*. Logo upload is also Phase 3.
 
 **Sessions.** Opaque 256-bit tokens in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in production). Only the token's SHA-256 hash is stored. Sessions slide forward on activity and end after `SESSION_IDLE_TIMEOUT_HOURS` without activity, on logout, on deactivation or on a password reset.
 
@@ -282,7 +325,7 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 1. **OI-01:** The real Swiss-Manager pairing export and the Swiss-Manager version USCC uses have not been provided. The importer (Phase 4) will use user-driven column mapping; the Chess-Results sample in `docs/` is a test fixture only.
 2. **OI-02:** Whether that Swiss-Manager version can re-import results from Excel, and in what layout. Until confirmed, the exporter writes a generic workbook isolated in one module.
 3. **OI-03:** The final result-code list and Swiss-Manager values. The defaults in §10 are a proposal. **Assumption:** forfeits and byes do not require player confirmation, because at least one player is absent.
-4. **OI-04:** The procedure when a player disputes a result or cannot confirm it personally. Needed before Phase 2 ends.
+4. **OI-04:** The procedure when a player disputes a result or cannot confirm it personally. Not yet decided. **Phase 2 behaviour:** a rejection sends the result to the TD's dispute queue. When a player cannot confirm, the TD uses **Duyệt ngoại lệ** with a written reason.
 5. **OI-05:** Hosting provider, budget and data-retention period.
 6. **OI-06:** Session lifetime (16 h implemented) and login-lock thresholds (5 tries / 10 min proposed; built in Phase 5).
 7. **OI-07:** Capacity figures (200 players, 10 recorders) are estimates.
@@ -297,8 +340,17 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 - `/api/auth/login` and `/api/auth/logout` do not require an `Idempotency-Key`. Repeating them is harmless, and the offline queue never replays them. Every other mutating endpoint requires one.
 - Idempotency records are kept until `deleteExpiredIdempotencyRecords` is scheduled (planned with the Phase 5 maintenance jobs; SRS asks for at least 48 h retention).
 - Deleting a tournament or result that has audit history is blocked by the append-only trigger by design. There is no delete feature.
-- The home page lists rounds as plain text. Round pages arrive in Phase 2.
-- Tournaments cannot be created from the UI yet (Phase 2); use the seed.
+- **Assumptions made in Phase 2 (flag if wrong):**
+  - Only a TD can submit codes that skip player confirmation (byes, forfeits), per SRS-SM-04. Recorders do not see those codes.
+  - A bye game can only take such a code.
+  - `editResult` to a bye/forfeit code still goes to PENDING, as SRS-SM-07 says, so the TD then approves it as an exception.
+  - Editing or deleting a board whose result is not NONE is refused; the TD cancels the result first. A board with any result history cannot be deleted.
+  - A result code that results ever used (now or in the audit log) cannot be deleted, and its code, scores and confirmation flag cannot change.
+  - An all-digit search matches the board number or a player ID exactly. Text matches names (diacritics ignored) and IDs by substring.
+- The round list, console and record page refresh on navigation or with **Làm mới**. Live updates over SSE come in Phase 3. Every transition already sends `NOTIFY result_changed` inside its transaction.
+- **Phase 3 will need the `pg` driver:** Prisma cannot `LISTEN`. Approval for adding `pg` will be requested at the start of Phase 3. Delivery of `NOTIFY` to a listener is tested then.
+- Logo upload (SRS-TOUR-02) moved to Phase 3, with branding on the projection screen. It needs file storage.
+- Under `next dev`, routes compile on first use, so the Playwright timeouts are generous (expect 20 s, test 90 s). Playwright is also capped at 2 workers: the default of half the CPU cores overloaded the dev server, and requests stalled. The flows take about 15 s once compiled.
 
 ## 12. Troubleshooting
 
