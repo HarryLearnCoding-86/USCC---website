@@ -1,0 +1,294 @@
+// prisma/schema.prisma
+// Prisma schema for the USCC Referee Results Web application.
+// Covers the data model in AGENT_PROMPT.md §3.2 and SRS §9.
+// Tables and columns are snake_case in PostgreSQL; fields are camelCase in TypeScript.
+// Instants are timestamptz (stored UTC, displayed in the tournament timezone); scores are decimals in 0.5 steps.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────────────────────────
+
+/// Arbiter role. TECHNICAL = technical arbiter (TD), RECORDER = result recorder (SRS §4.1 permission matrix).
+enum Role {
+  TECHNICAL
+  RECORDER
+}
+
+/// Result lifecycle states (AGENT_PROMPT.md §3.3). Values are stable: existing rows reference them.
+enum ResultStatus {
+  NONE
+  PENDING
+  DISPUTED
+  OFFICIAL
+  REOPENED
+}
+
+/// Whether a round's pairings have been published to arbiters.
+enum RoundStatus {
+  UNPUBLISHED
+  PUBLISHED
+  COMPLETED
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Accounts and sessions
+// ──────────────────────────────────────────────────────────────────
+
+/// Arbiter account. Players and spectators never have accounts (SRS-AUTH-02).
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  /// argon2id hash; the plain password is never stored (SRS-AUTH-03).
+  passwordHash String   @map("password_hash")
+  role         Role
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  enteredResults     Result[]            @relation("EnteredBy")
+  approvedResults    Result[]            @relation("ApprovedBy")
+  resultEvents       ResultEvent[]
+  pairingImports     PairingImport[]
+  sessions           Session[]
+  idempotencyRecords IdempotencyRecord[]
+
+  @@map("users")
+}
+
+/// Server-side session. The cookie holds a random token; only its SHA-256 hash is stored here,
+/// so a database leak does not expose usable session tokens. Rows are looked up on every request,
+/// which lets deactivation end sessions immediately (SRS-AUTH-07).
+model Session {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  tokenHash  String   @unique @map("token_hash")
+  /// Sliding expiry: pushed forward on activity, 16 h of inactivity ends the session (SRS-AUTH-04).
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  userAgent  String?  @map("user_agent")
+  ipAddress  String?  @map("ip_address")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Stored response for a mutating request, keyed by the client's Idempotency-Key (SRS-SYNC-03).
+/// Scoped per user so one arbiter's key can never replay another arbiter's response.
+model IdempotencyRecord {
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  idempotencyKey String   @map("idempotency_key")
+  /// SHA-256 of method + path + body; a reused key with a different request is rejected.
+  requestHash    String   @map("request_hash")
+  responseStatus Int      @map("response_status")
+  responseBody   Json     @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, idempotencyKey])
+  @@index([createdAt])
+  @@map("idempotency_records")
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Tournament configuration
+// ──────────────────────────────────────────────────────────────────
+
+/// A chess tournament. Swiss-Manager stays the source of truth for pairings and standings (RULE-01).
+model Tournament {
+  id             String   @id @default(cuid())
+  name           String
+  /// Calendar dates of the event; not instants, so stored as DATE.
+  startDate      DateTime @map("start_date") @db.Date
+  endDate        DateTime @map("end_date") @db.Date
+  venue          String?
+  organizer      String?
+  /// 1–20 rounds (SRS-TOUR-01), validated in the service layer.
+  roundsCount    Int      @map("rounds_count")
+  /// IANA timezone name used to display every timestamp (RULE-13).
+  timezone       String   @default("Asia/Ho_Chi_Minh")
+  logoStorageKey String?  @map("logo_storage_key")
+  primaryColor   String?  @map("primary_color")
+  secondaryColor String?  @map("secondary_color")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  resultCodes    ResultCode[]
+  players        Player[]
+  rounds         Round[]
+  pairingImports PairingImport[]
+  columnMapping  ColumnMapping?
+
+  @@map("tournaments")
+}
+
+/// A configured result type for one tournament (SRS-TOUR-05). The default list is a proposal (open question OI-03).
+model ResultCode {
+  id                         String  @id @default(cuid())
+  tournamentId               String  @map("tournament_id")
+  code                       String
+  labelVi                    String  @map("label_vi")
+  whiteScore                 Decimal @map("white_score") @db.Decimal(3, 1)
+  blackScore                 Decimal @map("black_score") @db.Decimal(3, 1)
+  /// false for codes that do not involve two players (byes): the TD's submit goes straight to OFFICIAL (SRS-SM-04).
+  requiresPlayerConfirmation Boolean @default(true) @map("requires_player_confirmation")
+  swissManagerValue          String? @map("swiss_manager_value")
+  sortOrder                  Int     @default(0) @map("sort_order")
+  /// A used code cannot be deleted, only hidden from new entries (SRS-TOUR-07).
+  isActive                   Boolean @default(true) @map("is_active")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  results    Result[]
+
+  @@unique([tournamentId, code])
+  @@map("result_codes")
+}
+
+/// A player in one tournament, identified by Swiss-Manager ID first and name second (RULE-02).
+model Player {
+  id                   String  @id @default(cuid())
+  tournamentId         String  @map("tournament_id")
+  /// Optional: name-only imports are allowed, but never auto-merged (SRS-IMP-08).
+  /// PostgreSQL treats NULLs as distinct, so the unique constraint applies only when an ID is present.
+  swissManagerPlayerId String? @map("swiss_manager_player_id")
+  fullName             String  @map("full_name")
+  clubOrFederation     String? @map("club_or_federation")
+  rating               Int?
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  whiteGames Game[]     @relation("WhitePlayer")
+  blackGames Game[]     @relation("BlackPlayer")
+
+  @@unique([tournamentId, swissManagerPlayerId])
+  @@map("players")
+}
+
+/// One round of a tournament.
+model Round {
+  id           String      @id @default(cuid())
+  tournamentId String      @map("tournament_id")
+  roundNumber  Int         @map("round_number")
+  status       RoundStatus @default(UNPUBLISHED)
+
+  tournament     Tournament      @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  games          Game[]
+  pairingImports PairingImport[]
+
+  @@unique([tournamentId, roundNumber])
+  @@map("rounds")
+}
+
+/// One board in one round. blackPlayerId is null only for a bye (SRS §9).
+model Game {
+  id                String   @id @default(cuid())
+  roundId           String   @map("round_id")
+  boardNumber       Int      @map("board_number")
+  whitePlayerId     String   @map("white_player_id")
+  blackPlayerId     String?  @map("black_player_id")
+  /// Points from the imported file only; the app never computes standings (SRS-PROJ-03).
+  whitePointsBefore Decimal? @map("white_points_before") @db.Decimal(4, 1)
+  blackPointsBefore Decimal? @map("black_points_before") @db.Decimal(4, 1)
+
+  round       Round   @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  whitePlayer Player  @relation("WhitePlayer", fields: [whitePlayerId], references: [id])
+  blackPlayer Player? @relation("BlackPlayer", fields: [blackPlayerId], references: [id])
+  result      Result?
+
+  @@unique([roundId, boardNumber])
+  @@map("games")
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Results and audit
+// ──────────────────────────────────────────────────────────────────
+
+/// The result of one game. status changes only through src/server/domain/result-state-machine.ts.
+/// version is the optimistic lock checked and incremented by every transition (SRS-SM-09).
+model Result {
+  id               String       @id @default(cuid())
+  gameId           String       @unique @map("game_id")
+  resultCodeId     String?      @map("result_code_id")
+  status           ResultStatus @default(NONE)
+  whiteConfirmedAt DateTime?    @map("white_confirmed_at") @db.Timestamptz
+  blackConfirmedAt DateTime?    @map("black_confirmed_at") @db.Timestamptz
+  enteredByUserId  String?      @map("entered_by_user_id")
+  approvedByUserId String?      @map("approved_by_user_id")
+  approvalReason   String?      @map("approval_reason")
+  version          Int          @default(0)
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  game       Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  resultCode ResultCode?   @relation(fields: [resultCodeId], references: [id])
+  enteredBy  User?         @relation("EnteredBy", fields: [enteredByUserId], references: [id])
+  approvedBy User?         @relation("ApprovedBy", fields: [approvedByUserId], references: [id])
+  events     ResultEvent[]
+
+  @@map("results")
+}
+
+/// Append-only audit log of result transitions (SRS-AUD-02). A database trigger rejects UPDATE and DELETE.
+/// No cascade from results: deleting a result that has history must fail rather than erase the audit trail.
+model ResultEvent {
+  id          String   @id @default(cuid())
+  resultId    String   @map("result_id")
+  actorUserId String?  @map("actor_user_id")
+  action      String
+  oldValue    Json?    @map("old_value")
+  newValue    Json?    @map("new_value")
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  result Result @relation(fields: [resultId], references: [id], onDelete: Restrict)
+  actor  User?  @relation(fields: [actorUserId], references: [id])
+
+  @@index([resultId, createdAt])
+  @@map("result_events")
+}
+
+/// Log of every confirmed pairing import (SRS-IMP-11).
+model PairingImport {
+  id               String   @id @default(cuid())
+  tournamentId     String   @map("tournament_id")
+  roundId          String?  @map("round_id")
+  originalFilename String   @map("original_filename")
+  fileSha256       String   @map("file_sha256")
+  storageKey       String?  @map("storage_key")
+  uploadedByUserId String   @map("uploaded_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  rowCount         Int      @default(0) @map("row_count")
+  /// Excel row numbers the TD excluded explicitly (SRS-IMP-07).
+  excludedRows     Json     @default("[]") @map("excluded_rows")
+  /// Array of { sheet, row, column, message } objects.
+  rowErrors        Json     @default("[]") @map("row_errors")
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  round      Round?     @relation(fields: [roundId], references: [id])
+  uploadedBy User       @relation(fields: [uploadedByUserId], references: [id])
+
+  @@map("pairing_imports")
+}
+
+/// The TD's saved column mapping, pre-filled on the next import (SRS-IMP-04).
+model ColumnMapping {
+  id           String @id @default(cuid())
+  tournamentId String @unique @map("tournament_id")
+  mapping      Json
+
+  tournament Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  @@map("column_mappings")
+}
