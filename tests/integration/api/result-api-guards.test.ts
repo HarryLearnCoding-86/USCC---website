@@ -14,6 +14,7 @@ import { POST as approveResult } from "@/app/api/games/[gameId]/approve/route";
 import { POST as cancelResult } from "@/app/api/games/[gameId]/cancel/route";
 import { POST as createTournamentRoute } from "@/app/api/tournaments/route";
 import { POST as addBoard } from "@/app/api/tournaments/[tournamentId]/rounds/[roundNumber]/games/route";
+import { computeCsrfTokenForTest } from "../../helpers/csrf-test-token";
 import { createFixtureUser, FIXTURE_PASSWORD, wipeTestDatabase } from "../../helpers/test-database";
 import { createTournamentFixture, type TournamentFixture } from "../../helpers/tournament-fixtures";
 
@@ -31,7 +32,7 @@ const APP_ORIGIN = "http://localhost:3000";
 function buildMutation(path: string, sessionToken: string, body: unknown, idempotencyKey: string): NextRequest {
   return new NextRequest(`${APP_ORIGIN}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: APP_ORIGIN, cookie: `${SESSION_COOKIE_NAME}=${sessionToken}`, "idempotency-key": idempotencyKey },
+    headers: { "content-type": "application/json", origin: APP_ORIGIN, cookie: `${SESSION_COOKIE_NAME}=${sessionToken}`, "idempotency-key": idempotencyKey, "x-csrf-token": computeCsrfTokenForTest(sessionToken) },
     body: JSON.stringify(body),
   });
 }
