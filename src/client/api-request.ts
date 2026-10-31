@@ -1,6 +1,20 @@
 // src/client/api-request.ts
-// Browser helper for calling the JSON API. Every mutation gets a fresh Idempotency-Key, which the
-// server requires (SRS-SYNC-03) and the Phase 3 offline queue will persist and replay.
+// Browser helper for calling the JSON API. Every mutation gets a fresh Idempotency-Key, which the server requires
+// (SRS-SYNC-03) and the offline queue persists and replays, plus the session's CSRF token (SRS §10.2).
+
+/** Readable cookie holding the CSRF token; must match src/server/auth/csrf-token.ts. */
+const CSRF_COOKIE_NAME = "uscc_csrf";
+
+/**
+ * Reads the CSRF token the server set at login. Read at send time, so a replay after re-login uses the new token.
+ *
+ * @returns The token, or "" when the cookie is missing (the server then answers 403).
+ */
+export function readCsrfToken(): string {
+  const cookiePrefix = `${CSRF_COOKIE_NAME}=`;
+  const csrfCookie = document.cookie.split("; ").find((cookieText) => cookieText.startsWith(cookiePrefix));
+  return csrfCookie ? decodeURIComponent(csrfCookie.slice(cookiePrefix.length)) : "";
+}
 
 /** Uniform result of an API call: ok flag, HTTP status and parsed JSON body. */
 export interface ApiRequestResult<TResponseBody> {
@@ -66,7 +80,7 @@ export async function sendJsonMutation<TResponseBody>(
 ): Promise<ApiRequestResult<TResponseBody>> {
   const response = await fetch(path, {
     method: httpMethod,
-    headers: { "Content-Type": "application/json", "Idempotency-Key": generateIdempotencyKey() },
+    headers: { "Content-Type": "application/json", "Idempotency-Key": generateIdempotencyKey(), "X-CSRF-Token": readCsrfToken() },
     body: requestBody === undefined ? null : JSON.stringify(requestBody),
     credentials: "same-origin",
   });

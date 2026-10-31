@@ -1,32 +1,28 @@
 # docker/Caddyfile
-# Caddy reverse proxy configuration for production (Phase 5).
-# Automatically obtains and renews TLS certificates via Let's Encrypt.
-# Replace {$DOMAIN} with your actual domain or set the DOMAIN env var.
+# Reverse proxy with automatic HTTPS (Let's Encrypt for a public domain; Caddy's local CA for DOMAIN=localhost).
+# HTTPS only with HSTS (NFR-07). The SSE stream (/api/tournaments/*/events) is neither compressed nor buffered,
+# so live updates reach the projection screen at once (SRS-PROJ-04).
 
 {$DOMAIN} {
-    reverse_proxy localhost:3000
+	@notEventStream not path /api/tournaments/*/events
+	encode @notEventStream zstd gzip
 
-    # Enable gzip and zstd compression.
-    encode gzip zstd
+	reverse_proxy app:3000 {
+		# Flush every write immediately: required for Server-Sent Events.
+		flush_interval -1
+		header_up X-Forwarded-Proto {scheme}
+	}
 
-    # Security headers.
-    header {
-        # Remove server identification.
-        -Server
-        # HSTS: 1 year, include subdomains.
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        # Prevent clickjacking.
-        X-Frame-Options "SAMEORIGIN"
-        # Prevent MIME-type sniffing.
-        X-Content-Type-Options "nosniff"
-        # Referrer policy.
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
 
-    # Log access to stdout for Docker log collection.
-    log {
-        output stdout
-        format json
-    }
+	log {
+		output stdout
+		format json
+	}
 }
-

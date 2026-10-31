@@ -1,10 +1,8 @@
 # docker-compose.yml
-# Starts PostgreSQL for local development.
-# Production profile also starts Caddy (reverse proxy with HTTPS).
+# Local development only: starts PostgreSQL on localhost:${POSTGRES_PORT:-5432}.
+# Production uses docker-compose.prod.yml (app, migrations, Caddy HTTPS, backups; database not exposed).
 #
-# Usage:
-#   Development: docker compose up -d
-#   Production:  docker compose --profile prod up -d
+# Usage: docker compose up -d
 
 services:
   postgres:
@@ -24,24 +22,5 @@ services:
       timeout: 5s
       retries: 5
 
-  # caddy is only started in the prod profile.
-  caddy:
-    profiles: ["prod"]
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - postgres
-
 volumes:
   postgres_data:
-  caddy_data:
-  caddy_config:
-

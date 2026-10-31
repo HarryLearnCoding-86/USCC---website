@@ -15,7 +15,7 @@ export const E2E_ACCOUNTS = {
 const E2E_ORIGIN = process.env.E2E_BASE_URL ?? "http://localhost:3000";
 
 /**
- * Sends a JSON mutation the way the app does: same Origin, fresh Idempotency-Key.
+ * Sends a JSON mutation the way the app does: same Origin, fresh Idempotency-Key, CSRF token from the cookie.
  *
  * @param request - Playwright request context (carries the session cookie).
  * @param httpMethod - POST, PUT, PATCH or DELETE.
@@ -24,9 +24,12 @@ const E2E_ORIGIN = process.env.E2E_BASE_URL ?? "http://localhost:3000";
  * @returns Parsed JSON body; fails the test on a non-2xx response.
  */
 export async function sendE2eMutation(request: APIRequestContext, httpMethod: "POST" | "PUT" | "PATCH" | "DELETE", path: string, requestBody: unknown) {
+  // The CSRF token lives in the readable cookie the login response set (SRS §10.2).
+  const { cookies } = await request.storageState();
+  const csrfToken = cookies.find((cookie) => cookie.name === "uscc_csrf")?.value ?? "";
   const response = await request.fetch(path, {
     method: httpMethod,
-    headers: { origin: E2E_ORIGIN, "content-type": "application/json", "idempotency-key": randomUUID() },
+    headers: { origin: E2E_ORIGIN, "content-type": "application/json", "idempotency-key": randomUUID(), "x-csrf-token": csrfToken },
     data: requestBody,
   });
   expect(response.ok(), `${httpMethod} ${path} → ${response.status()} ${await response.text()}`).toBe(true);

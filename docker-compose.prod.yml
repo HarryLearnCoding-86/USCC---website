@@ -1,0 +1,118 @@
+# docker-compose.prod.yml
+# Production stack on one VPS (Web requirements §3, NFR-15):
+#   postgres  — PostgreSQL 16, not exposed outside the Docker network
+#   migrate   — one-off: applies Prisma migrations before the app starts
+#   app       — Next.js standalone server (port 3000, internal only)
+#   caddy     — HTTPS reverse proxy on 80/443
+#   backup    — pg_dump + uploads archive every BACKUP_INTERVAL_MINUTES, pruned after BACKUP_RETENTION_DAYS
+#   tools     — on demand only (profile "tools"): `pnpm admin:create`, seeding, ad-hoc commands
+# Usage (README §9):
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+# For local development use docker-compose.yml instead (PostgreSQL only).
+
+name: uscc-referee
+
+x-database-environment: &database-environment
+  DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB}?schema=public
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: tools
+    image: uscc-referee-tools:latest
+    environment:
+      <<: *database-environment
+    command: ["pnpm", "db:migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: runner
+    image: uscc-referee-app:latest
+    restart: unless-stopped
+    environment:
+      <<: *database-environment
+      APP_URL: ${APP_URL:?set APP_URL}
+      SESSION_IDLE_TIMEOUT_HOURS: ${SESSION_IDLE_TIMEOUT_HOURS:-16}
+      UPLOAD_DIRECTORY: /app/storage/uploads
+      NODE_ENV: production
+    volumes:
+      - uploads:/app/storage/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      BACKUP_DIRECTORY: /backups
+      UPLOADS_DIRECTORY: /uploads
+      BACKUP_INTERVAL_MINUTES: ${BACKUP_INTERVAL_MINUTES:-15}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    entrypoint: ["sh", "/backup-scripts/backup-loop.sh"]
+    volumes:
+      - ./docker/backup:/backup-scripts:ro
+      - backups:/backups
+      - uploads:/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  tools:
+    profiles: ["tools"]
+    image: uscc-referee-tools:latest
+    environment:
+      <<: *database-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  uploads:
+  backups:
+  caddy_data:
+  caddy_config:

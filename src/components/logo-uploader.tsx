@@ -7,7 +7,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { vi } from "@/i18n/vi";
-import { generateIdempotencyKey, readApiErrorMessage } from "@/client/api-request";
+import { generateIdempotencyKey, readApiErrorMessage, readCsrfToken } from "@/client/api-request";
 import { FeedbackBanner, type FeedbackMessage } from "@/components/feedback-banner";
 
 /**
@@ -35,7 +35,7 @@ export function LogoUploader({ tournamentId, logoUrl }: { tournamentId: string; 
     try {
       const response = await fetch(`/api/tournaments/${tournamentId}/logo`, {
         method: "POST",
-        headers: { "Idempotency-Key": generateIdempotencyKey() },
+        headers: { "Idempotency-Key": generateIdempotencyKey(), "X-CSRF-Token": readCsrfToken() },
         body: formData,
         credentials: "same-origin",
       });

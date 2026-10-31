@@ -1,0 +1,6 @@
+# .gitattributes — scripts and configs executed inside Linux containers must keep LF line endings,
+# even when the repository is checked out on Windows with core.autocrlf=true.
+*.sh text eol=lf
+docker/Caddyfile text eol=lf
+docker/Dockerfile text eol=lf
+*.xlsx binary
