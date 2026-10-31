@@ -90,6 +90,20 @@ model Session {
   @@map("sessions")
 }
 
+/// One login attempt, kept briefly to lock a username after repeated failures (SRS-AUTH-05).
+/// Keyed by the submitted (lower-cased) username, so unknown usernames are throttled too.
+model LoginAttempt {
+  id                String   @id @default(cuid())
+  usernameAttempted String   @map("username_attempted")
+  wasSuccessful     Boolean  @map("was_successful")
+  ipAddress         String?  @map("ip_address")
+  attemptedAt       DateTime @default(now()) @map("attempted_at") @db.Timestamptz
+
+  @@index([usernameAttempted, attemptedAt])
+  @@index([attemptedAt])
+  @@map("login_attempts")
+}
+
 /// Stored response for a mutating request, keyed by the client's Idempotency-Key (SRS-SYNC-03).
 /// Scoped per user so one arbiter's key can never replay another arbiter's response.
 model IdempotencyRecord {

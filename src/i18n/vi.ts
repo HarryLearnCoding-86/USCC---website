@@ -47,6 +47,9 @@ export const vi = {
     loginRequired: "Vui lòng đăng nhập để tiếp tục.",
     forbidden: "Bạn không có quyền thực hiện thao tác này.",
     crossOriginRejected: "Yêu cầu không hợp lệ (sai nguồn gốc).",
+    // SRS-AUTH-05: per-username lockout after 5 failed logins in 10 minutes.
+    loginLocked: (minutes: number) => `Đăng nhập sai quá nhiều lần. Vui lòng thử lại sau ${minutes} phút.`,
+    csrfTokenInvalid: "Phiên làm việc không hợp lệ. Vui lòng tải lại trang.",
   },
 
   roles: {
