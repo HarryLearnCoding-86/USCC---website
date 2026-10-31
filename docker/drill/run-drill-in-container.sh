@@ -7,6 +7,8 @@
 # The container is removed afterwards unless KEEP_DRILL_HOST=yes.
 
 set -eu
+# Git Bash on Windows rewrites arguments like "/drill" into Windows paths; container paths must pass unchanged.
+export MSYS_NO_PATHCONV=1
 
 container_name="uscc-clean-host-drill"
 branch_name="$(git rev-parse --abbrev-ref HEAD)"
