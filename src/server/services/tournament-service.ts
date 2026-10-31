@@ -8,6 +8,7 @@ import { prisma } from "@/server/database/prisma-client";
 import type { DatabaseClient } from "@/server/database/database-client";
 import { DEFAULT_RESULT_CODES } from "@/server/domain/default-result-codes";
 import { ApiError } from "@/server/http/api-error";
+import { notifyTournamentChanged } from "@/server/services/change-notifier";
 import type { TournamentInput } from "@/server/validation/phase-two-input-schemas";
 
 /** Editable tournament fields as the settings form shows them. */
@@ -116,5 +117,7 @@ export async function updateTournament(
   );
   await database.round.createMany({ data: missingRoundNumbers.map((roundNumber) => ({ tournamentId, roundNumber })) });
   await database.tournament.update({ where: { id: tournamentId }, data: tournamentInput });
+  // SRS-TOUR-04: open screens pick up name/colour changes within 5 s.
+  await notifyTournamentChanged({ tournamentId }, database);
   return getTournamentSettings(tournamentId, database);
 }

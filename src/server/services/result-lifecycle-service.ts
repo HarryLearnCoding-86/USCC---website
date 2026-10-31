@@ -1,7 +1,7 @@
 // src/server/services/result-lifecycle-service.ts
 // Applies one result action in one transaction (SRS-SM-09): lock the result row, check the client's version
 // (409 on a stale one, SRS-SM-10), ask the state machine for the next state, persist it with version + 1,
-// append a result_events row (SRS-AUD-01, 03) and NOTIFY result_changed for live screens (Phase 3).
+// append a result_events row (SRS-AUD-01, 03) and NOTIFY result_changed for live screens.
 // This is the only place results are written; the status always comes from result-state-machine.ts.
 
 import type { Prisma } from "@prisma/client";
@@ -18,11 +18,9 @@ import {
 } from "@/server/domain/result-state-machine";
 import type { SignedInUser } from "@/server/auth/session-store";
 import { ApiError } from "@/server/http/api-error";
+import { notifyResultChanged } from "@/server/services/change-notifier";
 import { getGameView } from "@/server/services/game-query-service";
 import type { GameView } from "@/server/services/game-view-mapper";
-
-/** PostgreSQL channel that live screens listen on (Phase 3). */
-export const RESULT_CHANGED_CHANNEL = "result_changed";
 
 /** An action as received from the API: result codes by ID, not yet resolved. */
 export type ResultActionRequest =
@@ -235,18 +233,4 @@ async function buildAuditSnapshot(resultState: ResultState, version: number, dat
     approvedByUserId: resultState.approvedByUserId,
     enteredByUserId: resultState.enteredByUserId,
   };
-}
-
-/**
- * Publishes a change notification. pg_notify inside the transaction is delivered only on commit,
- * so listeners never see a change that was rolled back.
- *
- * @param payload - Small JSON payload identifying the change.
- * @param database - Transaction client.
- */
-async function notifyResultChanged(
-  payload: { tournamentId: string; roundNumber: number; gameId: string; status: string; version: number },
-  database: DatabaseClient,
-): Promise<void> {
-  await database.$executeRaw`SELECT pg_notify(${RESULT_CHANGED_CHANNEL}, ${JSON.stringify(payload)})`;
 }

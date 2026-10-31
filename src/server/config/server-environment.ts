@@ -14,6 +14,8 @@ const serverEnvironmentSchema = z.object({
   /** "true" forces the Secure cookie flag; defaults to on in production (SRS-AUTH-04). */
   SESSION_COOKIE_SECURE: z.enum(["true", "false"]).optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  /** Root folder for uploaded files (logos, pairing workbooks); must be persistent and backed up. */
+  UPLOAD_DIRECTORY: z.string().min(1).default("./storage/uploads"),
 });
 
 /** Validated server environment. */

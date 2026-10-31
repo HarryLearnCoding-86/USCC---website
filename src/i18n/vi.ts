@@ -262,6 +262,59 @@ export const vi = {
     } as Record<string, string>,
   },
 
+  projection: {
+    pageTitle: "Màn hình trình chiếu",
+    openLink: "Màn hình trình chiếu",
+    roundTitle: (roundNumber: number) => `Vòng ${roundNumber}`,
+    board: "Bàn",
+    white: "Trắng",
+    black: "Đen",
+    result: "Kết quả",
+    // SRS-PROJ-08: byes are shown as "Miễn đấu" with no opponent.
+    bye: "Miễn đấu",
+    // SRS-PROJ-03: imported points are provisional.
+    provisionalPointsNote: "Điểm trong ngoặc là điểm tạm tính trước vòng.",
+    // SRS-PROJ-05: last successful sync and the offline banner.
+    lastSync: (timeText: string) => `Cập nhật lúc ${timeText}`,
+    offlineBanner: "Mất kết nối máy chủ. Đang thử kết nối lại; dữ liệu trên màn hình có thể chưa mới nhất.",
+    noGames: "Vòng này chưa có cặp đấu.",
+    pageIndicator: (currentPage: number, pageCount: number) => `Trang ${currentPage}/${pageCount}`,
+    logoAlt: "Logo giải đấu",
+  },
+
+  liveStatus: {
+    connected: (timeText: string) => `Trực tiếp · cập nhật lúc ${timeText}`,
+    disconnected: "Mất kết nối trực tiếp, đang thử lại…",
+    connecting: "Đang kết nối…",
+  },
+
+  offlineQueue: {
+    // SRS-SYNC-02: badge text while actions are queued.
+    unsyncedBadge: (count: number) => `Chưa đồng bộ (${count})`,
+    retryNow: "Gửi lại ngay",
+    queuedNotice: "Mạng đang gián đoạn. Thao tác đã được lưu trên máy và sẽ tự gửi khi có mạng.",
+    // SRS-SYNC-04: a queued action rejected by the server is dropped and its reason shown.
+    rejectedNotice: (actionDescription: string, reason: string) => `Không gửi được "${actionDescription}": ${reason}`,
+    dismiss: "Đã hiểu",
+    actionDescriptions: {
+      submitResult: (boardNumber: number) => `Nhập kết quả bàn ${boardNumber}`,
+      confirmResult: (boardNumber: number, sideLabel: string) => `${sideLabel} xác nhận bàn ${boardNumber}`,
+      rejectResult: (boardNumber: number, sideLabel: string) => `${sideLabel} không đồng ý bàn ${boardNumber}`,
+    },
+    storageUnavailable: "Trình duyệt không cho lưu dữ liệu ngoại tuyến. Hãy giữ kết nối mạng.",
+  },
+
+  logo: {
+    heading: "Logo",
+    uploadLabel: "Tải logo (PNG, JPEG hoặc SVG, tối đa 2 MB)",
+    uploadButton: "Tải lên",
+    uploadSuccess: "Đã cập nhật logo.",
+    invalidType: "Chỉ chấp nhận tệp PNG, JPEG hoặc SVG.",
+    tooLarge: "Tệp logo lớn hơn 2 MB.",
+    missingFile: "Hãy chọn một tệp.",
+    noLogo: "Chưa có logo.",
+  },
+
   resultErrors: {
     invalidTransition: "Thao tác không hợp lệ ở trạng thái hiện tại của kết quả. Vui lòng tải lại.",
     sideAlreadyDecided: "Bên này đã bấm trước đó.",

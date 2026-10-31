@@ -107,6 +107,23 @@ export function assertSameOrigin(request: NextRequest): void {
 }
 
 /**
+ * Authenticates a request and checks one permission, for handlers that cannot use createApiRouteHandler
+ * (streaming SSE responses, binary downloads).
+ *
+ * @param request - Incoming request.
+ * @param requiredPermission - Permission from the SRS §4.1 matrix.
+ * @returns The signed-in user.
+ * @throws ApiError 401 UNAUTHENTICATED or 403 FORBIDDEN.
+ */
+export async function authorizeApiRequest(request: NextRequest, requiredPermission: Permission): Promise<SignedInUser> {
+  const signedInUser = await authenticateApiRequest(request);
+  if (!hasPermission(signedInUser.role, requiredPermission)) {
+    throw new ApiError(403, "FORBIDDEN", vi.auth.forbidden);
+  }
+  return signedInUser;
+}
+
+/**
  * Resolves the session cookie to a user.
  *
  * @param request - Incoming request.

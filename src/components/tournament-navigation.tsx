@@ -46,6 +46,9 @@ export function TournamentNavigation({
             <Link href={`/tournaments/${tournamentId}/settings`} className={linkClassName}>
               {vi.home.settingsLink}
             </Link>
+            <Link href={`/tournaments/${tournamentId}/projection`} target="_blank" className={linkClassName}>
+              {vi.projection.openLink}
+            </Link>
           </>
         )}
       </nav>

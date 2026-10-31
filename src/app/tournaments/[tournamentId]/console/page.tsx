@@ -6,6 +6,7 @@ import { vi } from "@/i18n/vi";
 import { requirePageUser } from "@/server/auth/page-guards";
 import { loadOrNotFound } from "@/server/http/page-data-loaders";
 import { getConsoleOverview, getTournamentSummary } from "@/server/services/game-query-service";
+import { LiveRefresh } from "@/components/live-refresh";
 import { PageShell } from "@/components/page-shell";
 import { TechnicalConsole } from "@/components/technical-console";
 import { TournamentNavigation } from "@/components/tournament-navigation";
@@ -34,7 +35,10 @@ export default async function ConsolePage({
   return (
     <PageShell signedInUser={signedInUser} isWide>
       <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentId} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} />
-      <h2 className="mb-3 text-lg font-semibold">{vi.console.pageTitle}</h2>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold">{vi.console.pageTitle}</h2>
+        <LiveRefresh tournamentId={tournamentId} timezone={tournamentSummary.timezone} />
+      </div>
       <TechnicalConsole tournamentId={tournamentId} timezone={tournamentSummary.timezone} roundNumbers={tournamentSummary.roundNumbers} overview={overview} />
     </PageShell>
   );

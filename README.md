@@ -2,7 +2,7 @@
 
 Internal web app for **USCC** (a chess club in Ho Chi Minh City) that lets arbiters run tournament results without printed pairing lists.
 
-> **Status: Phase 2 (Result lifecycle) complete.** Phase 1 (accounts, sessions, role guards) plus tournament settings and result codes, manual pairing entry, the round list with search, the mobile recording flow with two-player confirmation, and the TD console. Projection, offline queue, import/export and deployment hardening come in Phases 3–5 (see [AGENT_PROMPT.md](AGENT_PROMPT.md) §4). Sections below mark features that are not built yet as *(Phase N)*.
+> **Status: Phase 3 (Realtime, projection, offline) complete.** Phases 1–2 (accounts, tournaments, manual pairings, the recording flow with two-player confirmation, the TD console) plus live updates over SSE, the projection screen with branding and logo, and the offline queue on recorder phones. Import/export and deployment hardening come in Phases 4–5 (see [AGENT_PROMPT.md](AGENT_PROMPT.md) §4). Sections below mark features that are not built yet as *(Phase N)*.
 
 ---
 
@@ -33,13 +33,14 @@ Internal web app for **USCC** (a chess club in Ho Chi Minh City) that lets arbit
 | Both | Login / logout; sessions end after 16 h of inactivity | ✅ Phase 1 |
 | Both | Home page with tournaments and links to each round | ✅ Phase 2 |
 | TD | Account management: create, deactivate, reactivate, reset password | ✅ Phase 1 |
-| TD | Create tournaments; edit details, colours (contrast warning) and result codes | ✅ Phase 2 (logo upload: Phase 3) |
+| TD | Create tournaments; edit details, colours (contrast warning), logo and result codes | ✅ Phases 2–3 |
 | TD | Manual pairing entry | ✅ Phase 2 |
 | Both | Pairing list with search by board, name (diacritics ignored) or player ID | ✅ Phase 2 |
 | Both | Result entry and two-player confirmation on the recorder's phone | ✅ Phase 2 |
 | TD | Console: dispute queue, approve / edit / cancel / reopen with reason, audit history | ✅ Phase 2 |
-| TD | Live projection screen (official results within 5 s) | Phase 3 |
-| Recorder | Offline queue with "Chưa đồng bộ (N)" badge | Phase 3 |
+| TD | Live projection screen: official results only, within 5 s (measured p95 ≈ 0.1 s locally), paging, offline banner | ✅ Phase 3 |
+| Both | Round list and console update live, with a connection indicator | ✅ Phase 3 |
+| Recorder | Offline queue with "Chưa đồng bộ (N)" badge; each action applied exactly once on reconnect | ✅ Phase 3 |
 | TD | Excel import wizard (mapping, preview, row/column errors, diff) | Phase 4 |
 | TD | Excel export (official only by default; pending/disputed separately) | Phase 4 |
 | Ops | Production Docker image, Caddy HTTPS, backups, rate limiting, CSRF token, Sentry | Phase 5 |
@@ -116,7 +117,7 @@ src/
     record/[gameId]/    mobile result entry and two-player confirmation
     login/  forbidden/  public login page; access-denied page
   components/           presentational React components
-  client/               browser-only helpers (API calls with Idempotency-Key; offline queue in Phase 3)
+  client/               browser-only code: API calls with Idempotency-Key, realtime/ (SSE hook), offline/ (IndexedDB queue, sync engine, offline prediction)
   i18n/vi.ts            every Vietnamese UI string
   middleware.ts         Edge gate: no session cookie → /login or 401
   server/
@@ -128,7 +129,9 @@ src/
     services/           DB-backed use cases: auth, accounts, idempotency, tournaments, result codes,
                         manual pairings, the result lifecycle, game queries
     validation/         Zod schemas for Phase 2 request bodies and queries
-    import/ export/ realtime/   Phases 3–4
+    realtime/           PostgreSQL LISTEN connection (pg), in-process event hub, SSE stream builder
+    storage/            FileStorage interface + local-disk implementation (logos; workbooks in Phase 4)
+    import/ export/     Phase 4
 prisma/                 schema.prisma, migrations/, seed.ts
 tests/
   unit/                 pure modules (Vitest)
@@ -211,6 +214,7 @@ Override them with the `SEED_*` variables before seeding. Never use these accoun
 | `SESSION_COOKIE_SECURE` | no | `true`/`false` to force the cookie's Secure flag. Default: on in production, off in development. |
 | `NODE_ENV` | no | `development`, `test` or `production`. |
 | `SEED_TD_USERNAME`, `SEED_TD_PASSWORD`, `SEED_RECORDER_USERNAME`, `SEED_RECORDER_PASSWORD` | no | Override the demo accounts created by `pnpm db:seed`. |
+| `UPLOAD_DIRECTORY` | no | Folder for uploaded files (logos now, pairing workbooks in Phase 4). Default `./storage/uploads`. It must persist and be backed up. |
 | `SENTRY_DSN` | no | Error tracking *(wired in Phase 5)*. |
 
 Older `.env` files may still contain `SESSION_SECRET`, `SESSION_MAX_AGE_SECONDS` and `NEXT_PUBLIC_APP_URL`. Nothing reads them any more, because sessions are random tokens stored in the database. Remove them.
@@ -258,7 +262,18 @@ The first TD account comes from the seed script in development. For production, 
 4. **Lịch sử thay đổi** lists every event for the game: time in the tournament timezone, account, action, old → new status and reason.
 5. Byes and forfeits: open **Mở trang ghi kết quả** and choose the code. It becomes official at once and is never shown as confirmed by both players.
 
-**Open the projection screen, import Excel, export Excel** *(Phases 3–4)*.
+**Upload a logo**
+1. On the settings page, under **Logo**, choose a PNG, JPEG or SVG file (at most 2 MB) and click **Tải lên**.
+2. The file type is checked from the file's content, not its name. The logo appears on the projection screen within seconds.
+
+**Open the projection screen**
+1. Connect the laptop to the projector and sign in as a TD.
+2. Click **Màn hình trình chiếu** on any tournament page. It opens in a new tab at `/tournaments/[id]/projection`. Press F11 for full screen.
+3. The screen shows the latest round that has pairings. Add `?round=2` to pick a round, and `&pageSeconds=15` to change how fast pages rotate when the round does not fit one screen (5–30 s, default 10 s).
+4. Only official results are shown. Pending, disputed and reopened results leave the cell empty. Byes show **Miễn đấu**. Points in brackets are provisional points from the pairing data.
+5. **Cập nhật lúc HH:mm:ss** shows the last successful sync. If the connection drops, a red banner appears and the last data stays on screen. The screen reconnects by itself (1 s, 2 s, 4 s … up to 30 s) and reloads everything when it is back.
+
+**Import Excel, export Excel** *(Phase 4)*.
 
 ### Recorder
 
@@ -272,6 +287,11 @@ The first TD account comes from the seed script in development. For production, 
 8. If the page closes mid-flow, open the board again: it resumes at the first player who has not confirmed yet.
 9. If another arbiter changed the board meanwhile, you see "Kết quả đã thay đổi. Vui lòng tải lại." Tap **Tải lại**.
 10. Byes and forfeits are entered by the TD only.
+11. **No network?** Carry on. Each action is saved on the phone, and the header shows a yellow **Chưa đồng bộ (N)** badge. The flow continues as normal: White, then Black, then the final screen.
+    - Actions are sent automatically, in order, when the network returns. Tap the badge to send them immediately.
+    - Each action is applied exactly once, even if it is retried.
+    - The queue survives closing the page or the browser, but it is tied to your account: stay signed in until the badge disappears.
+    - If another arbiter changed the board in the meantime, a red notice explains which action was not sent and why. Check that board.
 
 ## 8. Testing
 
@@ -279,9 +299,9 @@ The first TD account comes from the seed script in development. For production, 
 |---|---|---|
 | `pnpm lint` | ESLint (Next.js + TypeScript rules, zero warnings allowed) | — |
 | `pnpm typecheck` | `tsc --noEmit` in strict mode | — |
-| `pnpm test:unit` | Vitest, `tests/unit`: **every result action × status × role against the SRS §7 table**, confirmation guards, byes and TD reasons; session tokens, argon2, the SRS §4.1 permission matrix, origin check, Zod schemas, deactivation rules, date formatting, ½ display, diacritic-free search, contrast, manual pairing rules, default result codes, idempotency keys | — |
-| `pnpm test:integration` | Creates and migrates `TEST_DATABASE_URL`, then Vitest `tests/integration`: sessions, accounts, idempotency, real route handlers (401, 403, origin, missing key, cookie flags, recorder 403s on TD routes, idempotent confirmation retry), the append-only trigger on `result_events`; the result lifecycle (full confirmation flow, dispute → approval, stale version 409, two simultaneous submits → one wins, byes, hidden codes, reopen/edit/cancel with audit rows); round sync, result-code protection, manual pairing validation, round search, dispute queue order | Docker PostgreSQL |
-| `pnpm test:e2e` | Playwright on mobile (390×844) and desktop (1440×900): auth flows; **recorder enters result → White confirms → Black confirms → OFFICIAL**; **Black rejects → DISPUTED → TD approves with reason** (with history); TD creates a tournament and enters boards in the UI (desktop only) | Docker PostgreSQL, `pnpm db:seed`; starts `pnpm dev` itself if not running |
+| `pnpm test:unit` | Vitest, `tests/unit`: **every result action × status × role against the SRS §7 table**, confirmation guards, byes and TD reasons; the offline sync engine (order, same key, backoff, drop-and-report, 401 keep, owner filter) and offline prediction; retry backoff, projection paging, logo type detection, SSE/NOTIFY parsing; session tokens, argon2, the permission matrix, origin check, Zod schemas, deactivation rules, date formatting, ½ display, search, contrast, manual pairing rules, default result codes, idempotency keys | — |
+| `pnpm test:integration` | Creates and migrates `TEST_DATABASE_URL`, then Vitest `tests/integration`: sessions, accounts, idempotency, real route handlers (401, 403, origin, missing key, cookie flags, recorder 403s on TD routes, idempotent retry), the append-only trigger; the result lifecycle (full flow, dispute → approval, stale version, simultaneous submits, byes, hidden codes, reopen/edit/cancel); tournament and pairing services; **a committed transition reaches an open SSE stream through LISTEN/NOTIFY and a rolled-back one does not**; streams close when the session ends; the projection carries only OFFICIAL results; logo upload (type, size, path traversal) | Docker PostgreSQL |
+| `pnpm test:e2e` | Playwright on mobile (390×844), desktop (1440×900) and projection (1920×1080): auth flows; enter → White → Black → OFFICIAL; reject → DISPUTED → TD approves; TD tournament setup; **projection latency over 20 iterations (each < 5 s, p95 printed)**; disputed results never projected; offline banner and reconnect; **offline → reload → online syncs exactly once**; **a lost response is retried with the same key and applied once** | Docker PostgreSQL, `pnpm db:seed`; starts `pnpm dev` itself if not running |
 | `pnpm test:all` | unit + integration + e2e | all of the above |
 
 Run `pnpm exec playwright install chromium` once before the first e2e run. Failure traces, screenshots and videos are saved in `test-results/`, and the HTML report in `playwright-report/`. The `.docx` test-run report generator (TEST_AGENT_PROMPT.md) is not built yet.
@@ -314,7 +334,9 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 
 **Timezone.** Each tournament has an IANA timezone, `Asia/Ho_Chi_Minh` by default. Timestamps are stored as `timestamptz` (UTC) and displayed as `DD/MM/YYYY HH:mm` (24-hour) in that zone. Tournament start and end dates are calendar dates (`DATE`).
 
-**Branding.** Each tournament has a primary and secondary colour, edited on the settings page with a contrast warning below 4.5:1. They are applied through the CSS variables `--brand-primary` and `--brand-secondary` on the projection screen *(Phase 3)*. Logo upload is also Phase 3.
+**Branding.** Each tournament has a primary and secondary colour, edited on the settings page with a contrast warning below 4.5:1, plus an optional logo (PNG, JPEG or SVG, ≤ 2 MB, stored under `UPLOAD_DIRECTORY`). The projection screen applies the colours through the CSS variables `--brand-primary` and `--brand-secondary`. SVG logos are served with a sandboxing Content-Security-Policy and shown only as images.
+
+**Realtime.** Every change sends `NOTIFY result_changed` or `NOTIFY tournament_changed` inside its transaction, so it is delivered only on commit. One `pg` connection per app process LISTENs and fans changes out to SSE streams (`GET /api/tournaments/[id]/events`). Streams send a heartbeat every 15 s and re-check the session each time. Clients reconnect with backoff (1 s → 30 s) and reload full state on every reconnect.
 
 **Sessions.** Opaque 256-bit tokens in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in production). Only the token's SHA-256 hash is stored. Sessions slide forward on activity and end after `SESSION_IDLE_TIMEOUT_HOURS` without activity, on logout, on deactivation or on a password reset.
 
@@ -347,9 +369,10 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
   - Editing or deleting a board whose result is not NONE is refused; the TD cancels the result first. A board with any result history cannot be deleted.
   - A result code that results ever used (now or in the audit log) cannot be deleted, and its code, scores and confirmation flag cannot change.
   - An all-digit search matches the board number or a player ID exactly. Text matches names (diacritics ignored) and IDs by substring.
-- The round list, console and record page refresh on navigation or with **Làm mới**. Live updates over SSE come in Phase 3. Every transition already sends `NOTIFY result_changed` inside its transaction.
-- **Phase 3 will need the `pg` driver:** Prisma cannot `LISTEN`. Approval for adding `pg` will be requested at the start of Phase 3. Delivery of `NOTIFY` to a listener is tested then.
-- Logo upload (SRS-TOUR-02) moved to Phase 3, with branding on the projection screen. It needs file storage.
+- The record page is not live-updated, because it shows one game and is refreshed by each action's response. A conflicting change by another arbiter appears as the 409 "Kết quả đã thay đổi" message with **Tải lại**.
+- **Realtime is per process:** the LISTEN connection and event hub live in the Next.js process. Run one app instance (the v1 deployment target). Several instances would each need their own listener, which works as is, but is untested.
+- **Offline queue scope:** only the recorder actions (submit, confirm, reject) are queued. TD console actions and setup forms need a connection and show an error otherwise. Queued actions belong to the account that made them; another account signing in on the same phone does not send them. There is no offline page cache (no service worker), so the record page must be open before the network drops.
+- **Phase 3 dependency added (approved):** `pg` (and `@types/pg`) for PostgreSQL LISTEN. `idb` is part of the original stack.
 - Under `next dev`, routes compile on first use, so the Playwright timeouts are generous (expect 20 s, test 90 s). Playwright is also capped at 2 workers: the default of half the CPU cores overloaded the dev server, and requests stalled. The flows take about 15 s once compiled.
 
 ## 12. Troubleshooting
@@ -364,4 +387,5 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 | Login works but you are immediately sent back to `/login` | You are on plain `http://` with `NODE_ENV=production`, so the `Secure` cookie is dropped. Use HTTPS, or set `SESSION_COOKIE_SECURE=false` for local testing only. |
 | Mutations return `403 CROSS_ORIGIN_REJECTED` | `APP_URL` does not match the address in the browser (scheme, host and port must all match). |
 | `Refusing to use database … for tests` | `TEST_DATABASE_URL` must name a database containing `test`. |
-| SSE stops behind a proxy *(Phase 3)* | Disable response buffering for `/api/tournaments/*/events` in the proxy; Caddy streams by default. |
+| Live status shows "Mất kết nối trực tiếp" behind a proxy | Disable response buffering for `/api/tournaments/*/events` (the app sends `X-Accel-Buffering: no`; Caddy streams by default), and allow idle connections longer than the 15 s heartbeat. |
+| Logo upload returns 500 | `UPLOAD_DIRECTORY` is not writable by the app user. Create it and give the app user write access. |

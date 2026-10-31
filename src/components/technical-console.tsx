@@ -1,7 +1,7 @@
 // src/components/technical-console.tsx
 // TD console (SRS-TD-01..05): status counts for a round, the oldest-first dispute queue showing who disagreed,
 // the round's games, and a panel to approve / edit / reopen / cancel the selected result with a mandatory reason,
-// plus the game's audit history. Live updates arrive in Phase 3; actions refresh the page data.
+// plus the game's audit history. The page re-renders live through LiveRefresh; actions also refresh the data.
 
 "use client";
 

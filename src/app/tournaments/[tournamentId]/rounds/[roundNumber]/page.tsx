@@ -1,10 +1,12 @@
 // src/app/tournaments/[tournamentId]/rounds/[roundNumber]/page.tsx
-// /tournaments/[id]/rounds/[n] — pairing list for TD and recorders with search, filter and status (SRS-LOOK-01..04).
+// /tournaments/[id]/rounds/[n] — pairing list for TD and recorders with search, filter and status (SRS-LOOK-01..04),
+// updated live over SSE (SRS-LOOK-05).
 
 import { vi } from "@/i18n/vi";
 import { requirePageUser } from "@/server/auth/page-guards";
 import { loadOrNotFound, parsePositiveIntegerSegment } from "@/server/http/page-data-loaders";
 import { getTournamentSummary, listRoundGames } from "@/server/services/game-query-service";
+import { LiveRefresh } from "@/components/live-refresh";
 import { PageShell } from "@/components/page-shell";
 import { RoundGameList } from "@/components/round-game-list";
 import { TournamentNavigation } from "@/components/tournament-navigation";
@@ -25,7 +27,10 @@ export default async function RoundPage({ params }: { params: Promise<{ tourname
   return (
     <PageShell signedInUser={signedInUser}>
       <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentSummary.id} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} />
-      <h2 className="mb-3 text-lg font-semibold">{vi.rounds.roundTitle(roundNumber)}</h2>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold">{vi.rounds.roundTitle(roundNumber)}</h2>
+        <LiveRefresh tournamentId={tournamentSummary.id} timezone={tournamentSummary.timezone} roundNumber={roundNumber} />
+      </div>
       <RoundGameList games={games} />
     </PageShell>
   );
