@@ -1,61 +1,46 @@
 # docker/Dockerfile
-# Production Dockerfile for the USCC Referee Results Web application.
-# Multi-stage build: dependencies → builder → runner.
-# Phase 5 will add Caddy sidecar and full prod hardening.
+# Production image for USCC Referee Results Web (AGENT_PROMPT.md Phase 5, NFR-15). Multi-stage:
+#   dependencies → builder (pnpm install, prisma generate, next build) →
+#   tools  : full dependencies and sources; runs migrations, `pnpm admin:create` and the seed (one-off containers)
+#   runner : the minimal Next.js standalone server, run as a non-root user.
+# Debian slim (not Alpine) because Prisma's engines and argon2's prebuilt binary target glibc.
+# Build: docker compose -f docker-compose.prod.yml build
 
-# ──────────────────────────────────────────────
-# Stage 1: Install dependencies
-# ──────────────────────────────────────────────
-FROM node:22-alpine AS deps
+FROM node:22-bookworm-slim AS base
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+# pnpm version comes from "packageManager" in package.json via corepack.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 NEXT_TELEMETRY_DISABLED=1
+RUN corepack enable
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-COPY package.json pnpm-lock.yaml ./
+FROM base AS dependencies
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY prisma ./prisma
-
+# postinstall runs `prisma generate` against the copied schema.
 RUN pnpm install --frozen-lockfile
 
-# ──────────────────────────────────────────────
-# Stage 2: Build the Next.js application
-# ──────────────────────────────────────────────
-FROM node:22-alpine AS builder
-WORKDIR /app
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-COPY --from=deps /app/node_modules ./node_modules
+FROM dependencies AS builder
 COPY . .
-
-# Generate the Prisma client for the target platform.
-RUN pnpm db:generate
-
-# Build Next.js in production mode.
-ENV NODE_ENV=production
+ENV NEXT_OUTPUT_STANDALONE=true
 RUN pnpm build
 
-# ──────────────────────────────────────────────
-# Stage 3: Production runner (minimal image)
-# ──────────────────────────────────────────────
-FROM node:22-alpine AS runner
-WORKDIR /app
-
+FROM builder AS tools
 ENV NODE_ENV=production
-# Create a non-root user for security.
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+CMD ["pnpm", "db:migrate"]
 
-COPY --from=builder /app/public ./public
+FROM base AS runner
+ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0 UPLOAD_DIRECTORY=/app/storage/uploads
+RUN groupadd --system --gid 1001 nodejs \
+  && useradd --system --uid 1001 --gid nodejs nextjs \
+  && mkdir -p /app/storage/uploads \
+  && chown -R nextjs:nodejs /app/storage
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-
 USER nextjs
-
 EXPOSE 3000
-
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
+# TCP check only: there is deliberately no public health route (CLAUDE.md §2: no public routes).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD node -e "require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"
 CMD ["node", "server.js"]
-

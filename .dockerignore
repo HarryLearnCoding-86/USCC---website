@@ -1,0 +1,19 @@
+# .dockerignore — keep the build context small and free of secrets and personal data.
+node_modules
+.next
+.git
+.vscode
+storage
+backups
+coverage
+playwright-report
+test-results
+tests
+reports
+docs
+*.log
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.tsbuildinfo
