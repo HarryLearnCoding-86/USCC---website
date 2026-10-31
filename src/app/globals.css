@@ -1,0 +1,46 @@
+/* src/app/globals.css
+   Global Tailwind CSS directives and CSS custom properties.
+   Tournament branding colours are applied via CSS variables per tournament layout. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Default brand colours — overridden per tournament in tournament layouts. */
+  --brand-primary: #1d4ed8;
+  --brand-secondary: #1e40af;
+}
+
+/* Ensure minimum tap target size on mobile (spec §3.5: min button height 56px). */
+@layer components {
+  .btn-confirm {
+    @apply min-h-[56px] px-6 py-4 rounded-lg font-semibold text-white text-lg
+      bg-green-600 hover:bg-green-700 active:bg-green-800
+      disabled:opacity-50 disabled:cursor-not-allowed
+      transition-colors duration-150;
+  }
+
+  .btn-reject {
+    @apply min-h-[56px] px-6 py-4 rounded-lg font-semibold text-white text-lg
+      bg-red-600 hover:bg-red-700 active:bg-red-800
+      disabled:opacity-50 disabled:cursor-not-allowed
+      transition-colors duration-150;
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 rounded-md font-medium text-white text-sm
+      bg-brand-primary hover:opacity-90 active:opacity-80
+      disabled:opacity-50 disabled:cursor-not-allowed
+      transition-opacity duration-150;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 rounded-md font-medium text-sm
+      border border-gray-300 bg-white text-gray-700
+      hover:bg-gray-50 active:bg-gray-100
+      disabled:opacity-50 disabled:cursor-not-allowed
+      transition-colors duration-150;
+  }
+}
+
