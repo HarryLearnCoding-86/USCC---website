@@ -45,3 +45,6 @@ pnpm-debug.log*
 
 # Uploaded files (logos, workbooks) — local development storage
 /storage/
+
+# Clean-host drill working files (git bundle)
+/.drill/

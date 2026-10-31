@@ -12,7 +12,9 @@ export MSYS_NO_PATHCONV=1
 
 container_name="uscc-clean-host-drill"
 branch_name="$(git rev-parse --abbrev-ref HEAD)"
-bundle_directory="$(mktemp -d)"
+# Relative and git-ignored, so the same path works for Windows git and for docker cp.
+bundle_directory=".drill"
+mkdir -p "${bundle_directory}"
 
 git bundle create "${bundle_directory}/uscc.bundle" "${branch_name}"
 docker rm -f "${container_name}" > /dev/null 2>&1 || true
