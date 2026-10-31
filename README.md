@@ -2,7 +2,7 @@
 
 Internal web app for **USCC** (a chess club in Ho Chi Minh City) that lets arbiters run tournament results without printed pairing lists.
 
-> **Status: Phase 3 (Realtime, projection, offline) complete.** Phases 1–2 (accounts, tournaments, manual pairings, the recording flow with two-player confirmation, the TD console) plus live updates over SSE, the projection screen with branding and logo, and the offline queue on recorder phones. Import/export and deployment hardening come in Phases 4–5 (see [AGENT_PROMPT.md](AGENT_PROMPT.md) §4). Sections below mark features that are not built yet as *(Phase N)*.
+> **Status: Phase 4 (Import and export) complete.** Phases 1–3 (accounts, tournaments, manual pairings, the recording flow with two-player confirmation, the TD console, live updates, projection, offline queue) plus the Excel import wizard and the results export. Deployment hardening comes in Phase 5 (see [AGENT_PROMPT.md](AGENT_PROMPT.md) §4). **The import and export layouts are provisional until a real Swiss-Manager file is provided (OI-01, OI-02).**
 
 ---
 
@@ -41,8 +41,8 @@ Internal web app for **USCC** (a chess club in Ho Chi Minh City) that lets arbit
 | TD | Live projection screen: official results only, within 5 s (measured p95 ≈ 0.1 s locally), paging, offline banner | ✅ Phase 3 |
 | Both | Round list and console update live, with a connection indicator | ✅ Phase 3 |
 | Recorder | Offline queue with "Chưa đồng bộ (N)" badge; each action applied exactly once on reconnect | ✅ Phase 3 |
-| TD | Excel import wizard (mapping, preview, row/column errors, diff) | Phase 4 |
-| TD | Excel export (official only by default; pending/disputed separately) | Phase 4 |
+| TD | Excel import wizard: manual column mapping, preview with sheet/row/column errors, player matching without auto-merge, diff and replace protection | ✅ Phase 4 |
+| TD | Excel export for a round or the whole tournament: official only by default, separate reconciliation file | ✅ Phase 4 (layout provisional, OI-02) |
 | Ops | Production Docker image, Caddy HTTPS, backups, rate limiting, CSRF token, Sentry | Phase 5 |
 
 ## 3. Architecture overview
@@ -128,16 +128,18 @@ src/
     http/               ApiError, the route-handler wrapper, result-action route factory, page loaders
     services/           DB-backed use cases: auth, accounts, idempotency, tournaments, result codes,
                         manual pairings, the result lifecycle, game queries
-    validation/         Zod schemas for Phase 2 request bodies and queries
+    validation/         Zod schemas for request bodies and queries
     realtime/           PostgreSQL LISTEN connection (pg), in-process event hub, SSE stream builder
     storage/            FileStorage interface + local-disk implementation (logos; workbooks in Phase 4)
-    import/ export/     Phase 4
+    import/             PairingImporter interface + ExcelJS column-mapping implementation
+    export/             ResultExporter interface + generic workbook implementation
 prisma/                 schema.prisma, migrations/, seed.ts
 tests/
   unit/                 pure modules (Vitest)
   integration/          services and route handlers against the test database (Vitest)
-  e2e/                  browser flows (Playwright, mobile 390×844 and desktop 1440×900)
-  helpers/              test database preparation and fixtures
+  e2e/                  browser flows (Playwright: mobile 390×844, desktop 1440×900, projection 1920×1080)
+  fixtures/             anonymized Chess-Results workbook and the script that builds it
+  helpers/              test database preparation, tournament and workbook builders
 docker/                 Dockerfile, Caddyfile (draft; finished in Phase 5)
 docs/                   BRD, SRS, PRD, technical notes, Chess-Results sample workbook
 ```
@@ -237,7 +239,7 @@ The first TD account comes from the seed script in development. For production, 
 2. Fill in **Tạo giải đấu mới**: name, dates, venue, organizer, number of rounds (1–20), timezone and colours. A yellow note warns when a colour gives white text a contrast below 4.5:1. Click **Tạo giải đấu**.
 3. You land on the settings page. Rounds 1..n exist, and the nine default result codes are listed under **Mã kết quả**. **Confirm or adjust the codes before round 1** (OI-03): edit a row and click **Lưu**, **Ẩn** a code you do not use, or add one with **Thêm mã**. A code already used by a result can only be hidden, relabelled, re-ordered or given a new Swiss-Manager value.
 
-**Enter pairings manually** (until the importer lands in Phase 4)
+**Enter pairings manually** (one board at a time; for a whole round use the import below)
 1. On the settings page, under **Nhập cặp đấu**, click the round.
 2. For each board, enter the board number, then White's Swiss-Manager ID, name, club and points before the round, and the same for Black. Leave Black's name empty for a bye. Click **Lưu bàn**.
 3. Players are matched by ID first. Without an ID, a name matches only if exactly one existing player has it. The form refuses, with a Vietnamese message:
@@ -273,7 +275,24 @@ The first TD account comes from the seed script in development. For production, 
 4. Only official results are shown. Pending, disputed and reopened results leave the cell empty. Byes show **Miễn đấu**. Points in brackets are provisional points from the pairing data.
 5. **Cập nhật lúc HH:mm:ss** shows the last successful sync. If the connection drops, a red banner appears and the last data stays on screen. The screen reconnects by itself (1 s, 2 s, 4 s … up to 30 s) and reloads everything when it is back.
 
-**Import Excel, export Excel** *(Phase 4)*.
+**Import pairings from Excel** (`/tournaments/[id]/import`, or **Nhập từ Excel** on any tournament page)
+1. **Tải tệp:** choose the round and an `.xlsx` file of at most 5 MB, then click **Tải lên**. Other file types are refused.
+2. **Chọn trang tính:** pick the sheet. The header row is detected as the first row with at least 4 text cells; check it against the preview of the first rows and change it if needed.
+3. **Ánh xạ cột:** for each piece of information, choose the column that holds it. Board number, White name and Black name are required; IDs, clubs and points are optional. Nothing about the layout is assumed. From the second import on, the previous mapping is filled in. The result column is shown for reference only and is never imported.
+4. **Xem trước:**
+   - Every problem is listed as `Sheet "…", dòng N, cột X: …`: missing values, bad board numbers, duplicate boards, points not in 0.5 steps, a player on two boards, an ID that belongs to another name.
+   - Fix the file and upload it again, or tick **Bỏ qua dòng này** for each row to leave out.
+   - When a name without an ID matches several players, choose the right one or **Tạo kỳ thủ mới**. Players are never merged automatically.
+   - Rows with no player names (blank lines, source footers) are skipped and listed.
+   - **The diff** shows boards added, removed, with changed players, or with changed points. Boards that already have a result are marked in red, and replacing them needs the extra tick **Tôi xác nhận thay thế…**. Their results are cancelled through the normal "Hủy kết quả" action, with a reason in the history.
+   - A board with result history cannot be removed by an import at all.
+5. **Xác nhận nhập:** the whole round is written in one transaction, or nothing is. The import is logged (file name, SHA-256, stored file, uploader, time, row count, excluded rows, messages).
+
+**Export results to Excel** (`/tournaments/[id]/export`, or **Xuất Excel**)
+1. Choose **Toàn giải** or one round.
+2. Leave **Kết quả chính thức** selected for the file to enter into Swiss-Manager. Choose **Đối soát** for a separate file of results that are not official yet (pending, disputed, reopened).
+3. Click **Tải tệp Excel**. The file has a header block (tournament, scope, content, generation time in the tournament timezone) and one row per game: round, board, White ID and name, Black ID and name, the result's Swiss-Manager value, the result in words, and the status. Byes show **Miễn đấu**.
+4. **Before the first tournament**, test-import this file into USCC's Swiss-Manager (PRD acceptance; OI-02). The layout is provisional and lives in one module (`src/server/export/generic-result-workbook-exporter.ts`) so it can be changed alone.
 
 ### Recorder
 
@@ -299,9 +318,9 @@ The first TD account comes from the seed script in development. For production, 
 |---|---|---|
 | `pnpm lint` | ESLint (Next.js + TypeScript rules, zero warnings allowed) | — |
 | `pnpm typecheck` | `tsc --noEmit` in strict mode | — |
-| `pnpm test:unit` | Vitest, `tests/unit`: **every result action × status × role against the SRS §7 table**, confirmation guards, byes and TD reasons; the offline sync engine (order, same key, backoff, drop-and-report, 401 keep, owner filter) and offline prediction; retry backoff, projection paging, logo type detection, SSE/NOTIFY parsing; session tokens, argon2, the permission matrix, origin check, Zod schemas, deactivation rules, date formatting, ½ display, search, contrast, manual pairing rules, default result codes, idempotency keys | — |
-| `pnpm test:integration` | Creates and migrates `TEST_DATABASE_URL`, then Vitest `tests/integration`: sessions, accounts, idempotency, real route handlers (401, 403, origin, missing key, cookie flags, recorder 403s on TD routes, idempotent retry), the append-only trigger; the result lifecycle (full flow, dispute → approval, stale version, simultaneous submits, byes, hidden codes, reopen/edit/cancel); tournament and pairing services; **a committed transition reaches an open SSE stream through LISTEN/NOTIFY and a rolled-back one does not**; streams close when the session ends; the projection carries only OFFICIAL results; logo upload (type, size, path traversal) | Docker PostgreSQL |
-| `pnpm test:e2e` | Playwright on mobile (390×844), desktop (1440×900) and projection (1920×1080): auth flows; enter → White → Black → OFFICIAL; reject → DISPUTED → TD approves; TD tournament setup; **projection latency over 20 iterations (each < 5 s, p95 printed)**; disputed results never projected; offline banner and reconnect; **offline → reload → online syncs exactly once**; **a lost response is retried with the same key and applied once** | Docker PostgreSQL, `pnpm db:seed`; starts `pnpm dev` itself if not running |
+| `pnpm test:unit` | Vitest, `tests/unit`: **every result action × status × role against the SRS §7 table**, confirmation guards, byes and TD reasons; the offline sync engine (order, same key, backoff, drop-and-report, 401 keep, owner filter) and offline prediction; retry backoff, projection paging, logo type detection, SSE/NOTIFY parsing; session tokens, argon2, the permission matrix, origin check, Zod schemas, deactivation rules, date formatting, ½ display, search, contrast, manual pairing rules, default result codes, idempotency keys; import rules (column letters, board/points parsing, header detection, byes, per-cell issues, player resolution, diff), the export layout read back with ExcelJS, cell text conversion | — |
+| `pnpm test:integration` | Creates and migrates `TEST_DATABASE_URL`, then Vitest `tests/integration`: sessions, accounts, idempotency, real route handlers (401, 403, origin, missing key, cookie flags, recorder 403s on TD routes, idempotent retry), the append-only trigger; the result lifecycle (full flow, dispute → approval, stale version, simultaneous submits, byes, hidden codes, reopen/edit/cancel); tournament and pairing services; **a committed transition reaches an open SSE stream through LISTEN/NOTIFY and a rolled-back one does not**; streams close when the session ends; the projection carries only OFFICIAL results; logo upload (type, size, path traversal); **the anonymized Chess-Results fixture imported through manual mapping (40 boards, footer skipped, logged, mapping saved)**; **malformed workbooks giving sheet/row/column errors that block confirmation until excluded**; file type/size/mapping errors; re-import replacing a board with a result only after the second confirmation (result cancelled with an audit event); an all-or-nothing confirm; **an export of the real seed script's tournament containing only OFFICIAL results by default**, plus the reconciliation file | Docker PostgreSQL |
+| `pnpm test:e2e` | Playwright on mobile (390×844), desktop (1440×900) and projection (1920×1080): auth flows; enter → White → Black → OFFICIAL; reject → DISPUTED → TD approves; TD tournament setup; **projection latency over 20 iterations (each < 5 s, p95 printed)**; disputed results never projected; offline banner and reconnect; **offline → reload → online syncs exactly once**; **a lost response is retried with the same key and applied once** ; **TD imports the fixture with the wizard by manual mapping and downloads an export containing only the official result** | Docker PostgreSQL, `pnpm db:seed`; starts `pnpm dev` itself if not running |
 | `pnpm test:all` | unit + integration + e2e | all of the above |
 
 Run `pnpm exec playwright install chromium` once before the first e2e run. Failure traces, screenshots and videos are saved in `test-results/`, and the HTML report in `playwright-report/`. The `.docx` test-run report generator (TEST_AGENT_PROMPT.md) is not built yet.
@@ -344,8 +363,8 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 
 **Open questions (do not guess; owners per SRS §13):**
 
-1. **OI-01:** The real Swiss-Manager pairing export and the Swiss-Manager version USCC uses have not been provided. The importer (Phase 4) will use user-driven column mapping; the Chess-Results sample in `docs/` is a test fixture only.
-2. **OI-02:** Whether that Swiss-Manager version can re-import results from Excel, and in what layout. Until confirmed, the exporter writes a generic workbook isolated in one module.
+1. **OI-01:** The real Swiss-Manager pairing export and the Swiss-Manager version USCC uses have not been provided. The importer maps columns by hand and assumes no layout, so it should handle the real file. **Check it with a real export before the first tournament.**
+2. **OI-02:** Whether that Swiss-Manager version can re-import results from Excel, and in what layout. Until confirmed, the export is a generic workbook laid out for fast manual entry (RISK-01 fallback), isolated in `generic-result-workbook-exporter.ts`.
 3. **OI-03:** The final result-code list and Swiss-Manager values. The defaults in §10 are a proposal. **Assumption:** forfeits and byes do not require player confirmation, because at least one player is absent.
 4. **OI-04:** The procedure when a player disputes a result or cannot confirm it personally. Not yet decided. **Phase 2 behaviour:** a rejection sends the result to the TD's dispute queue. When a player cannot confirm, the TD uses **Duyệt ngoại lệ** with a written reason.
 5. **OI-05:** Hosting provider, budget and data-retention period.
@@ -353,6 +372,8 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 7. **OI-07:** Capacity figures (200 players, 10 recorders) are estimates.
 
 **Conflicts between documents** (AGENT_PROMPT.md wins per CLAUDE.md, flagged for a decision):
+
+- *Handled in Phase 4:* AGENT_PROMPT §3.7 asks for the Chess-Results sample as a test fixture, but it contains real player names, and CLAUDE.md forbids real personal data in fixtures. Tests therefore use `tests/fixtures/chess-results-round-1-anonymized.xlsx`. It has the identical layout (sheet, metadata rows 1–5, header row 6, boards in rows 7–46, footer rows, club codes, points, Chess-Results result symbols) with fictional names, and is built by `pnpm exec tsx tests/fixtures/create-anonymized-chess-results-fixture.ts`. The original stays in `docs/`.
 
 - *Resolved 2026-10-30:* the SRS state-machine rules are adopted: `cancel(reason)` → NONE is added, `edit` is allowed from any state except NONE, and TD reasons need at least 5 characters. AGENT_PROMPT §3.3 has been updated to match.
 - The SRS lists login rate limiting (SRS-AUTH-05) and a CSRF token (SRS §10.2) as auth requirements; AGENT_PROMPT schedules them for Phase 5. Phase 1 ships an `Origin` check plus `SameSite=Lax` as the interim CSRF defence, and **no login rate limiting yet**.
@@ -373,6 +394,13 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 - **Realtime is per process:** the LISTEN connection and event hub live in the Next.js process. Run one app instance (the v1 deployment target). Several instances would each need their own listener, which works as is, but is untested.
 - **Offline queue scope:** only the recorder actions (submit, confirm, reject) are queued. TD console actions and setup forms need a connection and show an error otherwise. Queued actions belong to the account that made them; another account signing in on the same phone does not send them. There is no offline page cache (no service worker), so the record page must be open before the network drops.
 - **Phase 3 dependency added (approved):** `pg` (and `@types/pg`) for PostgreSQL LISTEN. `idb` is part of the original stack.
+- **Phase 4 assumptions (flag if wrong):**
+  - Black is treated as a bye when its name cell is empty or says `bye`, `spielfrei`, `Miễn đấu` or `-` and there is no Black ID.
+  - Rows where every player name/ID cell is empty are skipped and listed rather than reported as errors.
+  - A name without an ID that matches no existing player creates a new player (shown as a notice).
+  - The reconciliation export includes REOPENED results as well as PENDING and DISPUTED (all are unresolved).
+  - The route is `POST /imports` (upload), then `/imports/preview`, then `/imports/:uploadId/confirm`, instead of SRS §10.2's `/imports/preview` and `/imports/:previewId/confirm`. Uploading once lets the TD change sheet and mapping without uploading again.
+- Uploaded workbooks are kept under `UPLOAD_DIRECTORY/imports/` as the import log's stored file (SRS-IMP-11). Retention is part of OI-05.
 - Under `next dev`, routes compile on first use, so the Playwright timeouts are generous (expect 20 s, test 90 s). Playwright is also capped at 2 workers: the default of half the CPU cores overloaded the dev server, and requests stalled. The flows take about 15 s once compiled.
 
 ## 12. Troubleshooting
