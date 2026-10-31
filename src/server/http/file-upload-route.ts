@@ -1,6 +1,6 @@
 // src/server/http/file-upload-route.ts
 // Shared handling for multipart file uploads (logo, pairing workbook): same-origin check, session and role,
-// a size gate before the body is read, the Idempotency-Key rule every mutation follows (SRS-SYNC-03), and error
+// the CSRF token, a size gate before the body is read, the Idempotency-Key rule every mutation follows (SRS-SYNC-03), and error
 // mapping. The idempotency hash covers the file bytes plus any extra form fields, not the multipart text,
 // whose boundary changes on every retry.
 
@@ -11,7 +11,7 @@ import type { SignedInUser } from "@/server/auth/session-store";
 import type { Permission } from "@/server/auth/role-permissions";
 import type { DatabaseClient } from "@/server/database/database-client";
 import { ApiError } from "@/server/http/api-error";
-import { assertSameOrigin, authorizeApiRequest, convertErrorToResponse, IDEMPOTENCY_KEY_HEADER } from "@/server/http/api-route-handler";
+import { assertCsrfToken, assertSameOrigin, authorizeApiRequest, convertErrorToResponse, IDEMPOTENCY_KEY_HEADER } from "@/server/http/api-route-handler";
 import { runIdempotentOperation, type StoredApiResponse } from "@/server/services/idempotency-service";
 
 /** Multipart overhead allowed on top of the file limit before the request is rejected unread. */
@@ -53,6 +53,7 @@ export async function handleFileUpload(
   try {
     assertSameOrigin(request);
     const signedInUser = await authorizeApiRequest(request, options.requiredPermission);
+    await assertCsrfToken(request);
     const declaredLength = Number(request.headers.get("content-length") ?? 0);
     if (declaredLength > options.maximumFileBytes + MULTIPART_OVERHEAD_BYTES) throw options.tooLargeError;
     const idempotencyKey = request.headers.get(IDEMPOTENCY_KEY_HEADER)?.trim();
@@ -70,6 +71,6 @@ export async function handleFileUpload(
     );
     return NextResponse.json(storedResponse.body, { status: storedResponse.status });
   } catch (error) {
-    return convertErrorToResponse(error);
+    return convertErrorToResponse(error, request);
   }
 }

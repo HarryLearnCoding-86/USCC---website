@@ -4,7 +4,7 @@
 // If anything is already queued, new actions are queued behind it, so actions always reach the server in the order
 // the recorder performed them.
 
-import { generateIdempotencyKey } from "@/client/api-request";
+import { generateIdempotencyKey, readCsrfToken } from "@/client/api-request";
 import { IndexedDbOfflineActionStore, type QueuedAction } from "@/client/offline/offline-action-store";
 import { OfflineSyncEngine, type RejectedAction, type SendOutcome } from "@/client/offline/offline-sync-engine";
 
@@ -32,7 +32,7 @@ async function sendQueuedAction(queuedAction: QueuedAction): Promise<SendOutcome
   try {
     const response = await fetch(queuedAction.path, {
       method: queuedAction.httpMethod,
-      headers: { "Content-Type": "application/json", "Idempotency-Key": queuedAction.idempotencyKey },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": queuedAction.idempotencyKey, "X-CSRF-Token": readCsrfToken() },
       body: queuedAction.requestBody === undefined ? null : JSON.stringify(queuedAction.requestBody),
       credentials: "same-origin",
     });

@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { vi } from "@/i18n/vi";
-import { generateIdempotencyKey, readApiErrorMessage, sendJsonMutation } from "@/client/api-request";
+import { generateIdempotencyKey, readApiErrorMessage, readCsrfToken, sendJsonMutation } from "@/client/api-request";
 import { convertColumnNumberToLetter, PAIRING_IMPORT_FIELDS, REQUIRED_MAPPED_FIELDS, type PairingColumnMapping } from "@/server/domain/pairing-import-rules";
 import { formatScore } from "@/server/domain/result-display";
 import type { WorkbookOutline } from "@/server/import/pairing-importer";
@@ -61,7 +61,7 @@ export function PairingImportWizard({ tournamentId, roundNumbers }: { tournament
     try {
       const response = await fetch(`/api/tournaments/${tournamentId}/imports`, {
         method: "POST",
-        headers: { "Idempotency-Key": generateIdempotencyKey() },
+        headers: { "Idempotency-Key": generateIdempotencyKey(), "X-CSRF-Token": readCsrfToken() },
         body: formData,
         credentials: "same-origin",
       });
