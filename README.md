@@ -2,7 +2,7 @@
 
 Internal web app for **USCC** (a chess club in Ho Chi Minh City) that lets arbiters run tournament results without printed pairing lists.
 
-> **Status: Phase 4 (Import and export) complete.** Phases 1–3 (accounts, tournaments, manual pairings, the recording flow with two-player confirmation, the TD console, live updates, projection, offline queue) plus the Excel import wizard and the results export. Deployment hardening comes in Phase 5 (see [AGENT_PROMPT.md](AGENT_PROMPT.md) §4). **The import and export layouts are provisional until a real Swiss-Manager file is provided (OI-01, OI-02).**
+> **Status: Phase 5 (Deployment and hardening) complete — all five phases built.** The app covers accounts, tournaments, manual and Excel pairing import, the recording flow with two-player confirmation, the TD console, live updates, the projection screen, the offline queue and export. Phase 5 adds the production Docker stack with Caddy HTTPS, backups with a tested restore, login lockout, CSRF tokens and structured logs. **Before the first live tournament:** run the drill on the real server, and resolve the open questions in §11 (real Swiss-Manager file, result codes, dispute procedure, hosting and retention).
 
 ---
 
@@ -43,7 +43,7 @@ Internal web app for **USCC** (a chess club in Ho Chi Minh City) that lets arbit
 | Recorder | Offline queue with "Chưa đồng bộ (N)" badge; each action applied exactly once on reconnect | ✅ Phase 3 |
 | TD | Excel import wizard: manual column mapping, preview with sheet/row/column errors, player matching without auto-merge, diff and replace protection | ✅ Phase 4 |
 | TD | Excel export for a round or the whole tournament: official only by default, separate reconciliation file | ✅ Phase 4 (layout provisional, OI-02) |
-| Ops | Production Docker image, Caddy HTTPS, backups, rate limiting, CSRF token, Sentry | Phase 5 |
+| Ops | Production Docker stack (app, PostgreSQL, Caddy HTTPS, backups), `admin:create`, login lockout, CSRF tokens, structured logs, hourly maintenance | ✅ Phase 5 (Sentry: awaiting approval) |
 
 ## 3. Architecture overview
 
@@ -140,7 +140,7 @@ tests/
   e2e/                  browser flows (Playwright: mobile 390×844, desktop 1440×900, projection 1920×1080)
   fixtures/             anonymized Chess-Results workbook and the script that builds it
   helpers/              test database preparation, tournament and workbook builders
-docker/                 Dockerfile, Caddyfile (draft; finished in Phase 5)
+docker/                 Dockerfile (runner + tools images), Caddyfile, backup/ (backup, schedule, restore scripts), drill/ (clean-host drill)
 docs/                   BRD, SRS, PRD, technical notes, Chess-Results sample workbook
 ```
 
@@ -217,7 +217,7 @@ Override them with the `SEED_*` variables before seeding. Never use these accoun
 | `NODE_ENV` | no | `development`, `test` or `production`. |
 | `SEED_TD_USERNAME`, `SEED_TD_PASSWORD`, `SEED_RECORDER_USERNAME`, `SEED_RECORDER_PASSWORD` | no | Override the demo accounts created by `pnpm db:seed`. |
 | `UPLOAD_DIRECTORY` | no | Folder for uploaded files (logos now, pairing workbooks in Phase 4). Default `./storage/uploads`. It must persist and be backed up. |
-| `SENTRY_DSN` | no | Error tracking *(wired in Phase 5)*. |
+| `SENTRY_DSN` | no | Reserved for Sentry. The error-reporting hook is in place (`registerErrorReporter`), but the Sentry SDK is **not installed** until its dependency is approved. Errors are written as JSON log lines with a request ID. |
 
 Older `.env` files may still contain `SESSION_SECRET`, `SESSION_MAX_AGE_SECONDS` and `NEXT_PUBLIC_APP_URL`. Nothing reads them any more, because sessions are random tokens stored in the database. Remove them.
 
@@ -318,20 +318,123 @@ The first TD account comes from the seed script in development. For production, 
 |---|---|---|
 | `pnpm lint` | ESLint (Next.js + TypeScript rules, zero warnings allowed) | — |
 | `pnpm typecheck` | `tsc --noEmit` in strict mode | — |
-| `pnpm test:unit` | Vitest, `tests/unit`: **every result action × status × role against the SRS §7 table**, confirmation guards, byes and TD reasons; the offline sync engine (order, same key, backoff, drop-and-report, 401 keep, owner filter) and offline prediction; retry backoff, projection paging, logo type detection, SSE/NOTIFY parsing; session tokens, argon2, the permission matrix, origin check, Zod schemas, deactivation rules, date formatting, ½ display, search, contrast, manual pairing rules, default result codes, idempotency keys; import rules (column letters, board/points parsing, header detection, byes, per-cell issues, player resolution, diff), the export layout read back with ExcelJS, cell text conversion | — |
-| `pnpm test:integration` | Creates and migrates `TEST_DATABASE_URL`, then Vitest `tests/integration`: sessions, accounts, idempotency, real route handlers (401, 403, origin, missing key, cookie flags, recorder 403s on TD routes, idempotent retry), the append-only trigger; the result lifecycle (full flow, dispute → approval, stale version, simultaneous submits, byes, hidden codes, reopen/edit/cancel); tournament and pairing services; **a committed transition reaches an open SSE stream through LISTEN/NOTIFY and a rolled-back one does not**; streams close when the session ends; the projection carries only OFFICIAL results; logo upload (type, size, path traversal); **the anonymized Chess-Results fixture imported through manual mapping (40 boards, footer skipped, logged, mapping saved)**; **malformed workbooks giving sheet/row/column errors that block confirmation until excluded**; file type/size/mapping errors; re-import replacing a board with a result only after the second confirmation (result cancelled with an audit event); an all-or-nothing confirm; **an export of the real seed script's tournament containing only OFFICIAL results by default**, plus the reconciliation file | Docker PostgreSQL |
+| `pnpm test:unit` | Vitest, `tests/unit`: **every result action × status × role against the SRS §7 table**, confirmation guards, byes and TD reasons; the offline sync engine (order, same key, backoff, drop-and-report, 401 keep, owner filter) and offline prediction; retry backoff, projection paging, logo type detection, SSE/NOTIFY parsing; session tokens, argon2, the permission matrix, origin check, Zod schemas, deactivation rules, date formatting, ½ display, search, contrast, manual pairing rules, default result codes, idempotency keys; import rules (column letters, board/points parsing, header detection, byes, per-cell issues, player resolution, diff), the export layout read back with ExcelJS, cell text conversion; login lockout rule, CSRF token derivation and comparison, log redaction | — |
+| `pnpm test:integration` | Creates and migrates `TEST_DATABASE_URL`, then Vitest `tests/integration`: sessions, accounts, idempotency, real route handlers (401, 403, origin, missing key, cookie flags, recorder 403s on TD routes, idempotent retry), the append-only trigger; the result lifecycle (full flow, dispute → approval, stale version, simultaneous submits, byes, hidden codes, reopen/edit/cancel); tournament and pairing services; **a committed transition reaches an open SSE stream through LISTEN/NOTIFY and a rolled-back one does not**; streams close when the session ends; the projection carries only OFFICIAL results; logo upload (type, size, path traversal); **the anonymized Chess-Results fixture imported through manual mapping (40 boards, footer skipped, logged, mapping saved)**; **malformed workbooks giving sheet/row/column errors that block confirmation until excluded**; file type/size/mapping errors; re-import replacing a board with a result only after the second confirmation (result cancelled with an audit event); an all-or-nothing confirm; **an export of the real seed script's tournament containing only OFFICIAL results by default**, plus the reconciliation file; **CSRF token required on mutations and live-session logout; 5 failed logins lock the username (429 + Retry-After) without extending the lock, unknown usernames too; maintenance deletes only expired rows** | Docker PostgreSQL |
 | `pnpm test:e2e` | Playwright on mobile (390×844), desktop (1440×900) and projection (1920×1080): auth flows; enter → White → Black → OFFICIAL; reject → DISPUTED → TD approves; TD tournament setup; **projection latency over 20 iterations (each < 5 s, p95 printed)**; disputed results never projected; offline banner and reconnect; **offline → reload → online syncs exactly once**; **a lost response is retried with the same key and applied once** ; **TD imports the fixture with the wizard by manual mapping and downloads an export containing only the official result** | Docker PostgreSQL, `pnpm db:seed`; starts `pnpm dev` itself if not running |
 | `pnpm test:all` | unit + integration + e2e | all of the above |
 
 Run `pnpm exec playwright install chromium` once before the first e2e run. Failure traces, screenshots and videos are saved in `test-results/`, and the HTML report in `playwright-report/`. The `.docx` test-run report generator (TEST_AGENT_PROMPT.md) is not built yet.
 
-## 9. Deployment *(Phase 5)*
+## 9. Deployment
 
-The production Dockerfile, Caddy config, backup script and restore procedure are delivered and tested in Phase 5. Drafts are in `docker/`. Until then:
+**Target:** one small Linux VPS (e.g. Singapore region) with Docker Engine and the Compose plugin, ports 80 and 443 open, and a DNS name pointing at it. The stack is defined in `docker-compose.prod.yml`:
 
-- Run behind HTTPS only, with `NODE_ENV=production` so the session cookie is `Secure`.
-- Set `APP_URL` to the public origin.
-- Create the first TD account by running the seed with `SEED_TD_*` set, then delete the demo recorder and tournament. A dedicated `create-admin` command is planned for Phase 5.
+| Service | What it does |
+|---|---|
+| `postgres` | PostgreSQL 16. Reachable only inside the Docker network (no published port). |
+| `migrate` | Runs once on every start: `prisma migrate deploy`. The app waits for it to succeed. |
+| `app` | The Next.js standalone server as a non-root user, port 3000 internal only. Uploads live on the `uploads` volume. |
+| `caddy` | HTTPS on 80/443 with automatic Let's Encrypt certificates, HSTS and security headers. Live updates (`/events`) pass through unbuffered. |
+| `backup` | `pg_dump` plus an uploads archive every `BACKUP_INTERVAL_MINUTES` (default 15) into the `backups` volume, pruned after `BACKUP_RETENTION_DAYS`. |
+| `tools` | Started on demand only: `pnpm admin:create`, seeding, ad-hoc commands. |
+
+**First deployment**
+1. Install Docker Engine with the Compose plugin and git on the server, and point the DNS name at it.
+2. Clone and configure:
+   ```bash
+   git clone <repository-url> uscc-referee-results
+   ```
+   ```bash
+   cd uscc-referee-results && cp .env.production.example .env.production
+   ```
+   Edit `.env.production`:
+   - `DOMAIN` is the DNS name;
+   - `APP_URL` is `https://<DOMAIN>`;
+   - `POSTGRES_PASSWORD` must be strong (`openssl rand -base64 24 | tr -d '/+='`);
+   - `BACKUP_*` set the schedule (see Backups below).
+3. Build and start. The first build downloads the images and dependencies and takes several minutes.
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+   ```
+4. Create the first TD account. There is no public signup; the password comes from an environment variable, not a command-line argument.
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.production run --rm -e ADMIN_USERNAME=td_admin -e ADMIN_PASSWORD='<long password>' tools pnpm admin:create
+   ```
+5. Open `https://<DOMAIN>/login`, sign in, and create the other arbiter accounts and the tournament. Do **not** run `pnpm db:seed` on a production server: it creates demo accounts with known passwords.
+
+**Updating to a new version**
+```bash
+git pull && docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+```
+Migrations run automatically before the new app starts. A backup is taken every 15 minutes anyway, but take one by hand first (below).
+
+**Backups** (BR-14, NFR-06: recovery point ≤ 15 minutes)
+- The `backup` service writes `db-<UTC time>.dump` (PostgreSQL custom format, verified with `pg_restore --list`) and `uploads-<UTC time>.tar.gz` to the `backups` volume every `BACKUP_INTERVAL_MINUTES`. It deletes files older than `BACKUP_RETENTION_DAYS`, but only after a successful run.
+- Take a backup now:
+  ```bash
+  docker compose -f docker-compose.prod.yml --env-file .env.production exec backup sh /backup-scripts/backup-database.sh
+  ```
+- List backups:
+  ```bash
+  docker compose -f docker-compose.prod.yml --env-file .env.production exec backup ls -lh /backups
+  ```
+- **Copy backups off the server** (SRS §9 requires storage separate from the server). Until a provider is chosen (OI-05), copy the volume to another machine at least daily, e.g. from a host cron job with `rsync` or `rclone`. The volume path is shown by `docker volume inspect uscc-referee_backups`.
+- **Host cron alternative** to the built-in loop (set `BACKUP_INTERVAL_MINUTES` very high, or stop the `backup` service, and add to `crontab -e`). This takes a backup every 15 minutes on tournament days and daily at 03:00 otherwise:
+  ```
+  */15 7-22 * * 6,0 cd /opt/uscc-referee-results && docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --entrypoint sh backup /backup-scripts/backup-database.sh >> /var/log/uscc-backup.log 2>&1
+  0 3 * * * cd /opt/uscc-referee-results && docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --entrypoint sh backup /backup-scripts/backup-database.sh >> /var/log/uscc-backup.log 2>&1
+  ```
+
+**Restore** (NFR-06: recovery time ≤ 30 minutes). Destructive: it replaces the whole database and, if an archive is given, the uploaded files.
+1. Pick the files (`ls -lh /backups` above). If the server was lost, copy them into the `backups` volume of a freshly deployed stack (steps 1–3 above).
+2. Stop the app so nothing writes during the restore:
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.production stop app caddy
+   ```
+3. Restore:
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.production run --rm -e CONFIRM_RESTORE=yes --entrypoint sh backup /backup-scripts/restore-database.sh /backups/db-<time>.dump /backups/uploads-<time>.tar.gz
+   ```
+4. Start again; migrations re-run harmlessly:
+   ```bash
+   docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+   ```
+5. Sign in and check the latest results in the console. Results recorded after the backup must be re-entered. Their recorders' phones may still hold them in the offline queue; those that conflict are reported on the phones.
+
+**Clean-host drill** (Phase 5 acceptance: README followed end to end, backup restored). `docker/drill/clean-host-drill.sh` scripts this section exactly, on any clean Linux host with Docker, git and curl:
+1. Clone, configure, `up --build`.
+2. `admin:create`.
+3. HTTPS login through Caddy, checking HSTS and the Secure/HttpOnly cookie flags.
+4. API with the CSRF token; a mutation without it must get 403.
+5. SSE through Caddy.
+6. Back up, then change data.
+7. Restore.
+8. Verify the post-backup change is gone and the backed-up data (and the append-only trigger) is back.
+
+On a real VM:
+```bash
+sh docker/drill/clean-host-drill.sh <repository-url> <branch>
+```
+On a developer machine, `sh docker/drill/run-drill-in-container.sh` runs it inside a throwaway Docker-in-Docker container acting as the clean host.
+
+**Last drill run (2026-10-31, branch `feat/phase-5-deployment-hardening`): PASSED in 168 s.** The clean host was a fresh `docker:27-dind` container with nothing but Docker, git and curl; the branch was handed over as a git bundle, so the drill really cloned. Results:
+- **Fresh build:** `pnpm install --frozen-lockfile` and `next build` ran from scratch, compiling in 8.7 s. All five services started; `migrate` applied the migrations before `app` started.
+- **First account:** `pnpm admin:create` created the TD `td_admin`.
+- **HTTPS:** login through Caddy returned 200, with HSTS present and the session cookie `HttpOnly` and `Secure`. Plain HTTP redirected with 308 to HTTPS.
+- **CSRF:** a mutation without the token got 403; with it, the recorder and the tournament were created.
+- **Live updates:** the SSE `ready` event arrived through Caddy within 3 s.
+- **Backup:** `db-20261031T002533Z.dump` (33 KB, verified) and the uploads archive were written.
+- **Restore:** a recorder created after the backup was gone afterwards; the backed-up recorder and tournament were back, and so was the append-only trigger on `result_events`.
+
+**Not covered by the drill:** a real public domain with a Let's Encrypt certificate (the drill uses `localhost` with Caddy's local CA), off-server backup copies, and measuring recovery time on the real server. Do these on the production VPS before the first tournament.
+
+**Security checklist for go-live:**
+- HTTPS only; HSTS comes from Caddy.
+- Strong `POSTGRES_PASSWORD`, and the database is not exposed.
+- No demo seed on the server.
+- Every arbiter has their own account, and departing arbiters are deactivated.
+- Backups are copied off the server.
+- The drill has been run once on the real server.
 
 ## 10. Configuration reference
 
@@ -368,7 +471,7 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 3. **OI-03:** The final result-code list and Swiss-Manager values. The defaults in §10 are a proposal. **Assumption:** forfeits and byes do not require player confirmation, because at least one player is absent.
 4. **OI-04:** The procedure when a player disputes a result or cannot confirm it personally. Not yet decided. **Phase 2 behaviour:** a rejection sends the result to the TD's dispute queue. When a player cannot confirm, the TD uses **Duyệt ngoại lệ** with a written reason.
 5. **OI-05:** Hosting provider, budget and data-retention period.
-6. **OI-06:** Session lifetime (16 h implemented) and login-lock thresholds (5 tries / 10 min proposed; built in Phase 5).
+6. **OI-06:** Session lifetime (16 h implemented) and login-lock thresholds (5 failures in 10 minutes locks the username for 10 minutes, implemented in Phase 5). The TD should confirm both.
 7. **OI-07:** Capacity figures (200 players, 10 recorders) are estimates.
 
 **Conflicts between documents** (AGENT_PROMPT.md wins per CLAUDE.md, flagged for a decision):
@@ -376,12 +479,18 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 - *Handled in Phase 4:* AGENT_PROMPT §3.7 asks for the Chess-Results sample as a test fixture, but it contains real player names, and CLAUDE.md forbids real personal data in fixtures. Tests therefore use `tests/fixtures/chess-results-round-1-anonymized.xlsx`. It has the identical layout (sheet, metadata rows 1–5, header row 6, boards in rows 7–46, footer rows, club codes, points, Chess-Results result symbols) with fictional names, and is built by `pnpm exec tsx tests/fixtures/create-anonymized-chess-results-fixture.ts`. The original stays in `docs/`.
 
 - *Resolved 2026-10-30:* the SRS state-machine rules are adopted: `cancel(reason)` → NONE is added, `edit` is allowed from any state except NONE, and TD reasons need at least 5 characters. AGENT_PROMPT §3.3 has been updated to match.
-- The SRS lists login rate limiting (SRS-AUTH-05) and a CSRF token (SRS §10.2) as auth requirements; AGENT_PROMPT schedules them for Phase 5. Phase 1 ships an `Origin` check plus `SameSite=Lax` as the interim CSRF defence, and **no login rate limiting yet**.
+- *Resolved in Phase 5:* login rate limiting (SRS-AUTH-05) and CSRF tokens (SRS §10.2), which AGENT_PROMPT scheduled for Phase 5, are now implemented.
 
 **Current limitations:**
 
 - `/api/auth/login` and `/api/auth/logout` do not require an `Idempotency-Key`. Repeating them is harmless, and the offline queue never replays them. Every other mutating endpoint requires one.
-- Idempotency records are kept until `deleteExpiredIdempotencyRecords` is scheduled (planned with the Phase 5 maintenance jobs; SRS asks for at least 48 h retention).
+- **Phase 5 notes:**
+  - Hourly maintenance deletes expired sessions, idempotency records older than 48 h (SRS §9) and login attempts older than 24 h. Audit events, results and imports are never deleted.
+  - The CSRF token is derived from the session token: SHA-256 in a readable SameSite=Strict cookie, echoed in `X-CSRF-Token`. It is required on every authenticated mutation, including uploads, logout of a live session, and offline replays (read at send time, so a replay after re-login still works). Login is exempt; it has no session and is covered by the same-origin check.
+  - The login lockout is per username, not per IP address (SRS-AUTH-05). It also applies to unknown usernames, so it does not reveal which accounts exist. A real arbiter locked out by someone else's guessing waits 10 minutes, or a TD can reset their password (which does not lift the lock).
+  - There is no public health endpoint (CLAUDE.md §2). The container health check tests the app's TCP port.
+  - `pnpm build` on Windows produces a normal build. The Docker image sets `NEXT_OUTPUT_STANDALONE=true` for the standalone server, because creating the standalone output's symlinks fails on Windows without Developer Mode.
+  - **Sentry is not installed.** `@sentry/nextjs` is a new dependency and needs approval (CLAUDE.md). The reporting hook is ready.
 - Deleting a tournament or result that has audit history is blocked by the append-only trigger by design. There is no delete feature.
 - **Assumptions made in Phase 2 (flag if wrong):**
   - Only a TD can submit codes that skip player confirmation (byes, forfeits), per SRS-SM-04. Recorders do not see those codes.
@@ -407,6 +516,11 @@ Codes with "Players confirm? = no" go straight to OFFICIAL when a TD submits the
 
 | Symptom | Fix |
 |---|---|
+| `pnpm build` fails on Windows with `EPERM … symlink` | You set `NEXT_OUTPUT_STANDALONE=true` locally. Unset it; the standalone output is only needed inside the Docker image. |
+| Mutations return `403 CSRF_TOKEN_INVALID` | The page was open across a deployment or the `uscc_csrf` cookie was removed. Reload the page (the middleware re-issues the cookie) or sign in again. |
+| Login returns `429` | Five wrong passwords in 10 minutes locked that username. Wait for the time shown, then sign in. |
+| Caddy cannot get a certificate | DNS for `DOMAIN` must point at the server, and ports 80 and 443 must be reachable from the internet. See `docker compose -f docker-compose.prod.yml logs caddy`. |
+| `migrate` exits with an error and the app does not start | `docker compose -f docker-compose.prod.yml logs migrate`. Usually a wrong `POSTGRES_PASSWORD` compared with an existing `postgres_data` volume. |
 | `Can't reach database server at localhost:5432` | Start Docker Desktop, then `docker compose up -d`. Check with `docker compose ps`. If port 5432 is taken, set `POSTGRES_PORT` and update the port in `DATABASE_URL`. |
 | `@prisma/client did not initialize yet` | Run `pnpm db:generate` (the client is stale after a schema change). |
 | `Invalid server environment — …` on start | A variable in `.env` is missing or malformed. Compare with `.env.example`. |
