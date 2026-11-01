@@ -42,3 +42,9 @@ pnpm-debug.log*
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Uploaded files (logos, workbooks) — local development storage
+/storage/
+
+# Clean-host drill working files (git bundle)
+/.drill/

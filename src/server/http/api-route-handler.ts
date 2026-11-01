@@ -1,7 +1,8 @@
 // src/server/http/api-route-handler.ts
 // Wraps every authenticated API route handler with the cross-cutting rules, in this order:
 // same-origin check on mutations → session (401) → role permission (403, SRS-AUTH-06) →
-// JSON body parsing → Idempotency-Key handling on mutations (SRS-SYNC-03) → error mapping to { code, messageVi }.
+// JSON body parsing → CSRF token on mutations (SRS §10.2) → Idempotency-Key handling on mutations (SRS-SYNC-03) →
+// error mapping to { code, messageVi }; unexpected errors are logged with the request ID (NFR-14).
 // Route files stay thin: they declare a permission and call a service.
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -11,11 +12,13 @@ import { vi } from "@/i18n/vi";
 import { getServerEnvironment } from "@/server/config/server-environment";
 import type { DatabaseClient } from "@/server/database/database-client";
 import { prisma } from "@/server/database/prisma-client";
+import { CSRF_HEADER_NAME, isCsrfTokenValid } from "@/server/auth/csrf-token";
 import { SESSION_COOKIE_NAME } from "@/server/auth/session-cookie";
 import { findSignedInUserBySessionToken, type SignedInUser } from "@/server/auth/session-store";
 import { hasPermission, type Permission } from "@/server/auth/role-permissions";
 import { isSameOriginRequest } from "@/server/auth/same-origin-check";
 import { ApiError, toApiErrorBody } from "@/server/http/api-error";
+import { REQUEST_ID_HEADER, reportServerError } from "@/server/observability/server-logger";
 import { computeRequestHash, runIdempotentOperation } from "@/server/services/idempotency-service";
 
 /** HTTP header carrying the client-generated idempotency key. */
@@ -77,6 +80,7 @@ export function createApiRouteHandler<TRouteParams = Record<string, never>>(
         return NextResponse.json(result.body, { status: result.status });
       }
 
+      await assertCsrfToken(request);
       const idempotencyKey = readIdempotencyKey(request);
       const result = await runIdempotentOperation(
         {
@@ -88,7 +92,7 @@ export function createApiRouteHandler<TRouteParams = Record<string, never>>(
       );
       return NextResponse.json(result.body, { status: result.status });
     } catch (error) {
-      return convertErrorToResponse(error);
+      return convertErrorToResponse(error, request);
     }
   };
 }
@@ -104,6 +108,36 @@ export function assertSameOrigin(request: NextRequest): void {
   if (!isSameOriginRequest(request.method, request.headers.get("origin"), allowedOrigins)) {
     throw new ApiError(403, "CROSS_ORIGIN_REJECTED", vi.auth.crossOriginRejected);
   }
+}
+
+/**
+ * Requires a valid CSRF token on an authenticated mutation (SRS §10.2, see csrf-token.ts).
+ *
+ * @param request - Incoming request carrying the session cookie and the X-CSRF-Token header.
+ * @throws ApiError 403 CSRF_TOKEN_INVALID.
+ */
+export async function assertCsrfToken(request: NextRequest): Promise<void> {
+  const sessionToken = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  if (!(await isCsrfTokenValid(sessionToken, request.headers.get(CSRF_HEADER_NAME)))) {
+    throw new ApiError(403, "CSRF_TOKEN_INVALID", vi.auth.csrfTokenInvalid);
+  }
+}
+
+/**
+ * Authenticates a request and checks one permission, for handlers that cannot use createApiRouteHandler
+ * (streaming SSE responses, binary downloads).
+ *
+ * @param request - Incoming request.
+ * @param requiredPermission - Permission from the SRS §4.1 matrix.
+ * @returns The signed-in user.
+ * @throws ApiError 401 UNAUTHENTICATED or 403 FORBIDDEN.
+ */
+export async function authorizeApiRequest(request: NextRequest, requiredPermission: Permission): Promise<SignedInUser> {
+  const signedInUser = await authenticateApiRequest(request);
+  if (!hasPermission(signedInUser.role, requiredPermission)) {
+    throw new ApiError(403, "FORBIDDEN", vi.auth.forbidden);
+  }
+  return signedInUser;
 }
 
 /**
@@ -166,13 +200,14 @@ function isReadOnlyMethod(httpMethod: string): boolean {
 }
 
 /**
- * Maps any thrown value to a JSON error response. Unexpected errors are logged and hidden
+ * Maps any thrown value to a JSON error response. Unexpected errors are reported with the request ID and hidden
  * behind a generic 500 so stack traces never reach the browser.
  *
  * @param error - Anything thrown by guards, parsing or the route callback.
+ * @param request - The request, when available, for the request ID and path in the log.
  * @returns The error response.
  */
-export function convertErrorToResponse(error: unknown): NextResponse {
+export function convertErrorToResponse(error: unknown, request?: NextRequest): NextResponse {
   if (error instanceof ApiError) {
     return NextResponse.json(toApiErrorBody(error), { status: error.httpStatus });
   }
@@ -181,6 +216,8 @@ export function convertErrorToResponse(error: unknown): NextResponse {
     const validationError = new ApiError(400, "INVALID_INPUT", vi.apiErrors.invalidInput, fieldErrors);
     return NextResponse.json(toApiErrorBody(validationError), { status: 400 });
   }
-  console.error("Unhandled API error", error);
-  return NextResponse.json({ code: "SERVER_ERROR", messageVi: vi.apiErrors.serverError }, { status: 500 });
+  const requestId = request?.headers.get(REQUEST_ID_HEADER) ?? null;
+  reportServerError(error, { requestId, path: request?.nextUrl.pathname ?? null, method: request?.method ?? null });
+  // The request ID lets the TD quote an error to whoever reads the logs; no internals reach the browser.
+  return NextResponse.json({ code: "SERVER_ERROR", messageVi: vi.apiErrors.serverError, requestId }, { status: 500 });
 }

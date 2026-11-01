@@ -9,6 +9,7 @@ import { SESSION_COOKIE_NAME } from "@/server/auth/session-cookie";
 import { loginWithPassword } from "@/server/services/authentication-service";
 import { GET as listUsers, POST as createUser } from "@/app/api/users/route";
 import { POST as login } from "@/app/api/auth/login/route";
+import { computeCsrfTokenForTest } from "../../helpers/csrf-test-token";
 import { createFixtureUser, FIXTURE_PASSWORD, wipeTestDatabase } from "../../helpers/test-database";
 
 const APP_ORIGIN = "http://localhost:3000";
@@ -26,9 +27,13 @@ function buildUsersRequest(options: {
   body?: unknown;
   origin?: string;
   idempotencyKey?: string;
+  /** Override the CSRF header; null omits it. Defaults to the session's valid token. */
+  csrfToken?: string | null;
 }): NextRequest {
   const headers = new Headers({ "content-type": "application/json", origin: options.origin ?? APP_ORIGIN });
   if (options.sessionToken) headers.set("cookie", `${SESSION_COOKIE_NAME}=${options.sessionToken}`);
+  const csrfToken = options.csrfToken === undefined && options.sessionToken ? computeCsrfTokenForTest(options.sessionToken) : options.csrfToken;
+  if (csrfToken) headers.set("x-csrf-token", csrfToken);
   if (options.idempotencyKey) headers.set("idempotency-key", options.idempotencyKey);
   return new NextRequest(`${APP_ORIGIN}/api/users`, {
     method: options.method,

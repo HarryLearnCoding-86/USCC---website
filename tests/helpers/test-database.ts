@@ -20,6 +20,7 @@ const TABLES_TO_WIPE = [
   "column_mappings",
   "tournaments",
   "idempotency_records",
+  "login_attempts",
   "sessions",
   "users",
 ];

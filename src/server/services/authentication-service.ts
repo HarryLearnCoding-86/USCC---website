@@ -1,13 +1,14 @@
 // src/server/services/authentication-service.ts
-// Login use case: verify credentials, refuse inactive accounts, open a session.
-// Unknown usernames still run one argon2 verification, so response time does not reveal
-// which usernames exist.
+// Login use case: refuse locked usernames (SRS-AUTH-05), verify credentials, refuse inactive accounts, open a
+// session, and record the attempt. Unknown usernames still run one argon2 verification and are throttled like real
+// ones, so neither response time nor lockout behaviour reveals which usernames exist.
 
 import type { Role } from "@prisma/client";
 import { prisma } from "@/server/database/prisma-client";
 import { hashPassword, verifyPassword } from "@/server/auth/password-hasher";
 import { createSessionForUser, type SessionRequestMetadata } from "@/server/auth/session-store";
 import type { LoginInput } from "@/server/auth/account-input-schemas";
+import { evaluateLoginLock, LOGIN_ATTEMPT_LOOKBACK_MILLISECONDS } from "@/server/domain/login-throttle-rules";
 
 /** Outcome of a login attempt. */
 export type LoginOutcome =
@@ -18,7 +19,8 @@ export type LoginOutcome =
       user: { id: string; username: string; role: Role };
     }
   | { outcome: "INVALID_CREDENTIALS" }
-  | { outcome: "ACCOUNT_INACTIVE" };
+  | { outcome: "ACCOUNT_INACTIVE" }
+  | { outcome: "LOCKED"; retryAfterSeconds: number };
 
 let timingEqualizerHash: Promise<string> | undefined;
 
@@ -38,12 +40,45 @@ function getTimingEqualizerHash(): Promise<string> {
  *
  * @param loginInput - Validated username (lower-cased) and password.
  * @param requestMetadata - User agent and IP for the session record.
- * @returns SIGNED_IN with the raw session token, or the reason for refusal.
+ * @param now - Current time; injectable for tests.
+ * @returns SIGNED_IN with the raw session token, LOCKED with the wait time, or the reason for refusal.
  */
 export async function loginWithPassword(
   loginInput: LoginInput,
   requestMetadata: SessionRequestMetadata,
+  now: Date = new Date(),
 ): Promise<LoginOutcome> {
+  const recentAttempts = await prisma.loginAttempt.findMany({
+    where: { usernameAttempted: loginInput.username, attemptedAt: { gte: new Date(now.getTime() - LOGIN_ATTEMPT_LOOKBACK_MILLISECONDS) } },
+    select: { wasSuccessful: true, attemptedAt: true },
+  });
+  const lockState = evaluateLoginLock(recentAttempts, now);
+  if (lockState.isLocked) {
+    // Not recorded: attempts during a lock must not extend it.
+    return { outcome: "LOCKED", retryAfterSeconds: lockState.retryAfterSeconds };
+  }
+
+  const loginOutcome = await verifyCredentialsAndOpenSession(loginInput, requestMetadata);
+  await prisma.loginAttempt.create({
+    data: {
+      usernameAttempted: loginInput.username,
+      // An inactive account with the right password is not a guessing failure.
+      wasSuccessful: loginOutcome.outcome !== "INVALID_CREDENTIALS",
+      ipAddress: requestMetadata.ipAddress,
+      attemptedAt: now,
+    },
+  });
+  return loginOutcome;
+}
+
+/**
+ * Checks the password and opens a session when it is correct and the account active.
+ *
+ * @param loginInput - Username and password.
+ * @param requestMetadata - User agent and IP for the session record.
+ * @returns The outcome (never LOCKED).
+ */
+async function verifyCredentialsAndOpenSession(loginInput: LoginInput, requestMetadata: SessionRequestMetadata): Promise<LoginOutcome> {
   const user = await prisma.user.findUnique({ where: { username: loginInput.username } });
   if (!user) {
     await verifyPassword(await getTimingEqualizerHash(), loginInput.password);

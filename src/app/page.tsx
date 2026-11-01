@@ -1,9 +1,11 @@
 // src/app/page.tsx
-// Home page for both roles: the list of tournaments and their rounds (read-only in Phase 1).
-// Round pages, tournament settings and creation arrive in Phase 2.
+// Home page for both roles: tournaments with links to each round's pairing list (SRS-LOOK-04: list → game → entry),
+// plus console and settings links for the TD.
 
+import Link from "next/link";
 import { vi } from "@/i18n/vi";
 import { requirePageUser } from "@/server/auth/page-guards";
+import { hasPermission } from "@/server/auth/role-permissions";
 import { listTournamentsWithRounds } from "@/server/services/tournament-query-service";
 import { AppHeader } from "@/components/app-header";
 
@@ -15,6 +17,7 @@ import { AppHeader } from "@/components/app-header";
 export default async function HomePage() {
   const signedInUser = await requirePageUser("LOOK_UP_GAMES");
   const tournaments = await listTournamentsWithRounds();
+  const isTechnical = hasPermission(signedInUser.role, "MANAGE_TOURNAMENTS");
   return (
     <>
       <AppHeader signedInUser={signedInUser} />
@@ -32,10 +35,24 @@ export default async function HomePage() {
               <div className="mt-2 flex flex-wrap gap-2 text-sm">
                 {tournament.roundNumbers.length === 0 && <span className="text-gray-500">{vi.home.noRounds}</span>}
                 {tournament.roundNumbers.map((roundNumber) => (
-                  <span key={roundNumber} className="rounded bg-gray-100 px-2 py-1">
+                  <Link
+                    key={roundNumber}
+                    href={`/tournaments/${tournament.id}/rounds/${roundNumber}`}
+                    className="inline-flex min-h-[44px] items-center rounded bg-gray-100 px-3 hover:bg-gray-200"
+                  >
                     {vi.home.roundLink(roundNumber)}
-                  </span>
+                  </Link>
                 ))}
+                {isTechnical && (
+                  <>
+                    <Link href={`/tournaments/${tournament.id}/console`} className="btn-secondary inline-flex min-h-[44px] items-center">
+                      {vi.home.consoleLink}
+                    </Link>
+                    <Link href={`/tournaments/${tournament.id}/settings`} className="btn-secondary inline-flex min-h-[44px] items-center">
+                      {vi.home.settingsLink}
+                    </Link>
+                  </>
+                )}
               </div>
             </li>
           ))}

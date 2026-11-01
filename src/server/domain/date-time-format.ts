@@ -19,6 +19,27 @@ export function formatCalendarDate(calendarDate: Date): string {
 }
 
 /**
+ * Formats the time of day of an instant in a timezone, with seconds (SRS-PROJ-05 "Cập nhật lúc HH:mm:ss").
+ *
+ * @param instant - A point in time.
+ * @param timeZone - IANA timezone name.
+ * @returns "HH:mm:ss" in 24-hour time.
+ * @throws RangeError when timeZone is not a valid IANA name.
+ */
+export function formatTimeOfDayInTimezone(instant: Date, timeZone: string): string {
+  const timeParts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  const partValue = (partType: Intl.DateTimeFormatPartTypes): string =>
+    timeParts.find((timePart) => timePart.type === partType)?.value ?? "";
+  return `${partValue("hour")}:${partValue("minute")}:${partValue("second")}`;
+}
+
+/**
  * Formats an instant in a given timezone.
  *
  * @param instant - A point in time (stored as timestamptz).

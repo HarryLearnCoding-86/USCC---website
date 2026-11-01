@@ -7,6 +7,7 @@ import { vi } from "@/i18n/vi";
 import type { SignedInUser } from "@/server/auth/session-store";
 import { hasPermission } from "@/server/auth/role-permissions";
 import { LogoutButton } from "@/components/logout-button";
+import { OfflineSyncStatus } from "@/components/offline-sync-status";
 
 /**
  * Renders the application header.
@@ -22,6 +23,11 @@ export function AppHeader({ signedInUser }: { signedInUser: SignedInUser }) {
           <Link href="/" className="font-semibold text-brand-primary">
             {vi.common.appName}
           </Link>
+          {hasPermission(signedInUser.role, "MANAGE_TOURNAMENTS") && (
+            <Link href="/tournaments" className="text-sm text-gray-700 underline-offset-2 hover:underline">
+              {vi.nav.tournaments}
+            </Link>
+          )}
           {hasPermission(signedInUser.role, "MANAGE_ACCOUNTS") && (
             <Link href="/admin/users" className="text-sm text-gray-700 underline-offset-2 hover:underline">
               {vi.nav.users}
@@ -29,6 +35,7 @@ export function AppHeader({ signedInUser }: { signedInUser: SignedInUser }) {
           )}
         </nav>
         <div className="flex items-center gap-3 text-sm text-gray-600">
+          <OfflineSyncStatus signedInUserId={signedInUser.id} />
           <span data-testid="signed-in-user">
             {vi.nav.signedInAs(signedInUser.username, vi.roles[signedInUser.role])}
           </span>
