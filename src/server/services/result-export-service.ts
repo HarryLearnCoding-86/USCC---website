@@ -2,12 +2,13 @@
 // Collects results for an export (SRS-EXP-01..05, BR-09, BR-15): one round or the whole tournament, OFFICIAL results
 // by default, or a separate reconciliation file of results that are not official yet (PENDING, DISPUTED, REOPENED).
 // The status filter is applied in the database query, so a default export can never contain a non-official result
-// (CLAUDE.md §2). Layout is delegated to a ResultExporter.
+// (CLAUDE.md §2). Each row also names the winner (game-winner.ts). Layout is delegated to a ResultExporter.
 
 import type { ResultStatus } from "@prisma/client";
 import { vi } from "@/i18n/vi";
 import { prisma } from "@/server/database/prisma-client";
 import { formatInstantInTimezone } from "@/server/domain/date-time-format";
+import { determineGameOutcome, selectWinningSide } from "@/server/domain/game-winner";
 import { GenericResultWorkbookExporter } from "@/server/export/generic-result-workbook-exporter";
 import type { ExportContent, ExportedFile, ResultExporter } from "@/server/export/result-exporter";
 import { ApiError } from "@/server/http/api-error";
@@ -58,7 +59,7 @@ export async function buildResultExport(
       round: { select: { roundNumber: true } },
       whitePlayer: { select: { swissManagerPlayerId: true, fullName: true } },
       blackPlayer: { select: { swissManagerPlayerId: true, fullName: true } },
-      result: { select: { status: true, resultCode: { select: { code: true, labelVi: true, swissManagerValue: true } } } },
+      result: { select: { status: true, resultCode: { select: { code: true, labelVi: true, swissManagerValue: true, whiteScore: true, blackScore: true } } } },
     },
     orderBy: [{ round: { roundNumber: "asc" } }, { boardNumber: "asc" }],
   });
@@ -68,16 +69,30 @@ export async function buildResultExport(
     scopeLabel: exportRequest.roundNumber === null ? vi.importExport.exportScopeAll : vi.importExport.exportScopeRound(exportRequest.roundNumber),
     content: exportRequest.content,
     generatedAtText: formatInstantInTimezone(now, tournament.timezone),
-    rows: games.map((game) => ({
-      roundNumber: game.round.roundNumber,
-      boardNumber: game.boardNumber,
-      whitePlayerId: game.whitePlayer.swissManagerPlayerId,
-      whiteName: game.whitePlayer.fullName,
-      blackPlayerId: game.blackPlayer?.swissManagerPlayerId ?? null,
-      blackName: game.blackPlayer?.fullName ?? null,
-      swissManagerResultValue: game.result?.resultCode ? (game.result.resultCode.swissManagerValue ?? game.result.resultCode.code) : null,
-      resultLabelVi: game.result?.resultCode?.labelVi ?? null,
-      status: game.result?.status ?? "NONE",
-    })),
+    generatedAtIso: now.toISOString(),
+    rows: games.map((game) => {
+      const resultCode = game.result?.resultCode ?? null;
+      const whiteScore = resultCode ? resultCode.whiteScore.toNumber() : null;
+      const blackScore = resultCode ? resultCode.blackScore.toNumber() : null;
+      const outcome = determineGameOutcome({ whiteScore, blackScore, hasBlackPlayer: game.blackPlayer !== null });
+      const winningSide = selectWinningSide(outcome);
+      const winningPlayer = winningSide === "WHITE" ? game.whitePlayer : winningSide === "BLACK" ? game.blackPlayer : null;
+      return {
+        roundNumber: game.round.roundNumber,
+        boardNumber: game.boardNumber,
+        whitePlayerId: game.whitePlayer.swissManagerPlayerId,
+        whiteName: game.whitePlayer.fullName,
+        blackPlayerId: game.blackPlayer?.swissManagerPlayerId ?? null,
+        blackName: game.blackPlayer?.fullName ?? null,
+        swissManagerResultValue: resultCode ? (resultCode.swissManagerValue ?? resultCode.code) : null,
+        resultLabelVi: resultCode?.labelVi ?? null,
+        whiteScore,
+        blackScore,
+        outcome,
+        winnerPlayerId: winningPlayer?.swissManagerPlayerId ?? null,
+        winnerName: winningPlayer?.fullName ?? null,
+        status: game.result?.status ?? "NONE",
+      };
+    }),
   });
 }

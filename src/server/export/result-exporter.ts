@@ -4,6 +4,7 @@
 // implementation replaces the generic one without touching data loading, routes or pages.
 
 import type { ResultStatus } from "@prisma/client";
+import type { GameOutcome } from "@/server/domain/game-winner";
 
 /** What is being exported. */
 export type ExportContent = "OFFICIAL" | "RECONCILIATION";
@@ -20,6 +21,14 @@ export interface ExportGameRow {
   /** Swiss-Manager value of the result code (SRS-EXP-02), or the code itself when no value is configured. */
   swissManagerResultValue: string | null;
   resultLabelVi: string | null;
+  /** Points of the result code, stored ½ as 0.5; null when the game has no code yet. */
+  whiteScore: number | null;
+  blackScore: number | null;
+  /** Who won (src/server/domain/game-winner.ts). */
+  outcome: GameOutcome;
+  /** Swiss-Manager ID and name of the winner; null for draws, byes, double forfeits and games without a result. */
+  winnerPlayerId: string | null;
+  winnerName: string | null;
   status: ResultStatus;
 }
 
@@ -31,6 +40,8 @@ export interface ResultExportData {
   content: ExportContent;
   /** Generation time already formatted in the tournament timezone (SRS-EXP-02). */
   generatedAtText: string;
+  /** Generation time as ISO 8601 (UTC), for machine-readable formats. */
+  generatedAtIso: string;
   rows: ExportGameRow[];
 }
 

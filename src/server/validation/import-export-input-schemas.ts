@@ -47,4 +47,6 @@ export const exportQuerySchema = z.object({
     .enum(["official", "pending"])
     .default("official")
     .transform((includeText) => (includeText === "official" ? ("OFFICIAL" as const) : ("RECONCILIATION" as const))),
+  /** File format: Excel for manual entry, XML for re-import into Swiss-Manager (provisional layout, OI-02). */
+  format: z.enum(["xlsx", "xml"]).default("xlsx"),
 });

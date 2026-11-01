@@ -1,7 +1,7 @@
 // src/server/export/generic-result-workbook-exporter.ts
 // The v1 ResultExporter: a generic .xlsx (SRS-EXP-02) with a header block (tournament, scope, content, generation
 // time, and a note that the layout is provisional) followed by one row per game: round, board, White ID and name,
-// Black ID and name, result (Swiss-Manager value), status. Laid out for fast manual entry into Swiss-Manager
+// Black ID and name, result (Swiss-Manager value), status, winner. Laid out for fast manual entry into Swiss-Manager
 // until its re-import format is confirmed (OI-02, RISK-01). All labels come from vi.ts.
 
 import ExcelJS from "exceljs";
@@ -17,7 +17,7 @@ export const EXPORT_TABLE_HEADER_ROW_NUMBER = 7;
  * @param text - Any text.
  * @returns Slug.
  */
-function toFileNameSlug(text: string): string {
+export function toFileNameSlug(text: string): string {
   return (
     text
       .normalize("NFD")
@@ -53,7 +53,7 @@ export class GenericResultWorkbookExporter implements ResultExporter {
     });
 
     const columns = labels.columns;
-    const columnTitles = [columns.round, columns.board, columns.whiteId, columns.whiteName, columns.blackId, columns.blackName, columns.result, columns.resultLabel, columns.status];
+    const columnTitles = [columns.round, columns.board, columns.whiteId, columns.whiteName, columns.blackId, columns.blackName, columns.result, columns.resultLabel, columns.status, columns.winner];
     const titleRow = worksheet.getRow(EXPORT_TABLE_HEADER_ROW_NUMBER);
     titleRow.values = columnTitles;
     titleRow.font = { bold: true };
@@ -73,13 +73,14 @@ export class GenericResultWorkbookExporter implements ResultExporter {
         gameRow.swissManagerResultValue ?? "",
         gameRow.resultLabelVi ?? "",
         vi.resultStatus[gameRow.status],
+        gameRow.winnerName ?? vi.gameOutcome[gameRow.outcome],
       ];
     });
     if (exportData.rows.length === 0) {
       worksheet.getRow(EXPORT_TABLE_HEADER_ROW_NUMBER + 1).getCell(1).value = labels.noRows;
     }
     worksheet.columns.forEach((column, columnIndex) => {
-      column.width = [8, 6, 14, 30, 14, 30, 22, 26, 18][columnIndex] ?? 14;
+      column.width = [8, 6, 14, 30, 14, 30, 22, 26, 18, 30][columnIndex] ?? 14;
     });
     worksheet.views = [{ state: "frozen", ySplit: EXPORT_TABLE_HEADER_ROW_NUMBER }];
 

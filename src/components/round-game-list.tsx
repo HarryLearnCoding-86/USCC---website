@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { vi } from "@/i18n/vi";
 import { doesGameMatchSearch } from "@/server/domain/game-search-filter";
+import { determineGameOutcome, selectWinningSide } from "@/server/domain/game-winner";
 import { formatScore, formatScoreLine } from "@/server/domain/result-display";
 import type { GameView, PlayerView } from "@/server/services/game-view-mapper";
 import { ResultStatusBadge } from "@/components/result-status-badge";
@@ -65,6 +66,10 @@ export function RoundGameList({ games }: { games: GameView[] }) {
 function GameCard({ game }: { game: GameView }) {
   const resultCode = game.result.resultCode;
   const isPending = game.result.status === "PENDING";
+  // Marks the winner next to their name, so nobody has to read "1 – 0" against the colours.
+  const winningSide = selectWinningSide(
+    determineGameOutcome({ whiteScore: resultCode?.whiteScore ?? null, blackScore: resultCode?.blackScore ?? null, hasBlackPlayer: game.black !== null }),
+  );
   return (
     <li data-testid={`game-card-${game.boardNumber}`}>
       <Link href={`/record/${game.gameId}`} className="block rounded-lg border border-gray-200 bg-white p-3 hover:border-brand-primary">
@@ -76,8 +81,8 @@ function GameCard({ game }: { game: GameView }) {
           </span>
         </div>
         <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-          <PlayerLine sideLabel={vi.rounds.white} player={game.white} />
-          {game.black ? <PlayerLine sideLabel={vi.rounds.black} player={game.black} /> : <p className="text-sm text-gray-600">{vi.rounds.bye}</p>}
+          <PlayerLine sideLabel={vi.rounds.white} player={game.white} isWinner={winningSide === "WHITE"} />
+          {game.black ? <PlayerLine sideLabel={vi.rounds.black} player={game.black} isWinner={winningSide === "BLACK"} /> : <p className="text-sm text-gray-600">{vi.rounds.bye}</p>}
         </div>
         {isPending && (
           <p className="mt-1 text-xs text-gray-600">
@@ -99,7 +104,7 @@ function GameCard({ game }: { game: GameView }) {
  * @param props.player - The player.
  * @returns A paragraph.
  */
-function PlayerLine({ sideLabel, player }: { sideLabel: string; player: PlayerView }) {
+function PlayerLine({ sideLabel, player, isWinner }: { sideLabel: string; player: PlayerView; isWinner: boolean }) {
   const details = [
     player.swissManagerPlayerId ? vi.rounds.playerId(player.swissManagerPlayerId) : null,
     player.clubOrFederation,
@@ -109,6 +114,7 @@ function PlayerLine({ sideLabel, player }: { sideLabel: string; player: PlayerVi
     <p className="text-sm">
       <span className="mr-1 inline-block w-10 text-gray-500">{sideLabel}</span>
       <span className="text-base font-medium">{player.fullName}</span>
+      {isWinner && <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-xs font-semibold text-green-800">{vi.gameOutcome.winnerMark}</span>}
       {details.length > 0 && <span className="block pl-11 text-xs text-gray-500">{details.join(" · ")}</span>}
     </p>
   );

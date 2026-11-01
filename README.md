@@ -37,7 +37,7 @@ The app gives the club a channel from the board to Swiss-Manager that is **fast,
 2. **Both players confirm** each result on the recorder's phone. A result becomes **official** only after both confirmations, or after the technical arbiter approves an exception with a written reason.
 3. Official results appear on the projection screen **within 5 seconds**. Unconfirmed or disputed results never appear there.
 4. Every change is logged with who, when, why, and the old and new values.
-5. The technical arbiter exports official results to Excel for Swiss-Manager in one step.
+5. The technical arbiter exports official results, with the winner of each game, to Excel or XML for Swiss-Manager in one step.
 
 ### Who uses it
 
@@ -62,7 +62,7 @@ Only arbiters with accounts can open the site. There is no public page and no se
 | Who changed a result, when and why | ❌ | ❌ | ❌ | Partial edit history | ✅ Append-only audit log with a reason for every TD change |
 | Two arbiters entering the same board at once | Conflicting slips | n/a | n/a | Last write wins silently | ✅ First entry wins; the second gets a clear "reload" message |
 | Works through Wi-Fi drops | n/a | n/a | ❌ | ❌ | ✅ Actions queue on the phone and sync exactly once |
-| Getting results back into Swiss-Manager | Retype every result | n/a | n/a | Copy by hand | ✅ One Excel export of official results |
+| Getting results back into Swiss-Manager | Retype every result | n/a | n/a | Copy by hand | ✅ One Excel or XML export of official results |
 | Access control | Whoever holds the paper | The TD's laptop | Public | Link sharing | ✅ Accounts with two roles, HTTPS, login lockout |
 
 The app does **not** replace Swiss-Manager or Chess-Results. Swiss-Manager still pairs rounds and computes standings, and Chess-Results can still publish them. The app covers the part neither does: collecting **verified** results at the board and feeding them back.
@@ -83,7 +83,7 @@ The app does **not** replace Swiss-Manager or Chess-Results. Swiss-Manager still
 | TD | Pairings: manual board entry, or an Excel import wizard with column mapping, per-cell errors and a diff before anything is replaced |
 | TD | Console: live status counts, a dispute queue, approve / edit / reopen / cancel with a reason, full history per game |
 | TD | Projection screen: official results only, branded, large text, automatic paging, last-sync time, offline banner |
-| TD | Excel export: one round or the whole tournament, official results by default, plus a separate reconciliation file |
+| TD | Excel or XML export: one round or the whole tournament, official results by default, plus a separate reconciliation file; every row names the winner |
 | TD | Account management: create, deactivate, reactivate, reset password |
 | Ops | Docker deployment with automatic HTTPS, backups every 15 minutes, a tested restore, structured logs |
 
@@ -123,10 +123,30 @@ The demo data from `pnpm db:seed` (see [§5](#5-setup)) gives you a TD account, 
 
      Each action needs a reason of at least 5 characters, and the game's full history is shown underneath.
    - **Byes and forfeits:** click **Mở trang ghi kết quả** on the game and choose the code. It becomes official at once and is never shown as "confirmed by both players".
-4. **Export** (**Xuất Excel**, `/tournaments/[id]/export`):
+4. **Export** (**Xuất kết quả**, `/tournaments/[id]/export`):
    1. Choose the whole tournament or one round.
-   2. Leave **Kết quả chính thức** selected, and click **Tải tệp Excel**.
-   3. Enter the file into Swiss-Manager. Choose **Đối soát** instead for a separate list of results that aren't official yet.
+   2. Leave **Kết quả chính thức** selected. Choose **Đối soát** instead for a separate list of results that aren't official yet.
+   3. Under **Định dạng tệp**, choose **Excel (.xlsx)** for manual entry or **XML (.xml)** to re-import into Swiss-Manager, and click **Tải tệp xuống**.
+   4. Enter or import the file into Swiss-Manager. Both formats have a winner for every decided game (**Người thắng** column in Excel, `<Winner>` element in XML). Draws, byes and double forfeits have no winner.
+
+   **Winners on screen:** the round list marks the winner with a green **Thắng** label, and the projection screen shows the winner's name in green.
+
+   **XML layout (provisional, OI-02).** UTF-8, one `<Round>` per round, one `<Game>` per board; scores keep ½ as `0.5`; players are identified by their Swiss-Manager ID:
+
+   ```xml
+   <ResultExport formatVersion="1" tournament="…" scope="Vòng 1" content="OFFICIAL" generatedAt="2026-11-01T04:00:00.000Z">
+     <Round number="1">
+       <Game board="1" status="OFFICIAL" outcome="BLACK_WINS">
+         <White playerId="12" name="…" score="0"/>
+         <Black playerId="7" name="…" score="1"/>
+         <Result swissManagerValue="0-1" label="Đen thắng"/>
+         <Winner side="BLACK" playerId="7" name="…"/>
+       </Game>
+     </Round>
+   </ResultExport>
+   ```
+
+   `outcome` is one of `WHITE_WINS`, `BLACK_WINS`, `DRAW`, `NO_WINNER` (double forfeit) or `BYE`. A bye is written as `<Black bye="true"/>`.
 
 ### 3.3 Result recorder: each game
 
@@ -195,6 +215,7 @@ The app was built in five phases (AGENT_PROMPT.md §4). Each ended with lint, ty
 **Goal:** get pairings in from Swiss-Manager's Excel files, and results back out.
 - **Import wizard:** upload, sheet and header row, a column mapping you choose by hand (no layout assumed), preview with per-cell errors, row exclusion, player choice for ambiguous names, a diff with replace protection, then an all-or-nothing confirm. Every import is logged.
 - **Export:** a header block plus one row per game, official results only by default, and a separate reconciliation file. The layout lives in one module, ready for the confirmed Swiss-Manager format.
+- **Added after Phase 5:** the winner of each game (export column, round-list label, green name on the projection) and an XML export option (`result-xml-exporter.ts`).
 - **Test fixture:** the Chess-Results sample contains real names, so tests use an anonymized copy with the identical layout.
 - **Result:** 216 unit, 65 integration and 21 browser tests:
   - the sample imports by manual mapping (40 boards);
@@ -433,8 +454,8 @@ On a developer machine, `sh docker/drill/run-drill-in-container.sh` does the sam
 |---|---|---|
 | `pnpm lint` | ESLint, zero warnings allowed | — |
 | `pnpm typecheck` | TypeScript strict type-check | — |
-| `pnpm test:unit` | 225 tests of pure logic: every result action × status × role, confirmation rules, permissions, login lockout, CSRF, import rules, export layout, paging, offline sync engine | — |
-| `pnpm test:integration` | 75 tests against a real test database: sessions, accounts, idempotency, the result lifecycle (including simultaneous submits), live notifications, projection filtering, imports and exports, CSRF and lockout through the real routes | Docker PostgreSQL |
+| `pnpm test:unit` | 235 tests of pure logic: every result action × status × role, confirmation rules, permissions, login lockout, CSRF, import rules, export layouts (Excel and XML), winner rule, paging, offline sync engine | — |
+| `pnpm test:integration` | 76 tests against a real test database: sessions, accounts, idempotency, the result lifecycle (including simultaneous submits), live notifications, projection filtering, imports and exports, CSRF and lockout through the real routes | Docker PostgreSQL |
 | `pnpm test:e2e` | 21 Playwright browser tests at phone (390×844), laptop (1440×900) and projector (1920×1080) sizes: the full confirmation and dispute flows, projection latency, offline sync, the import wizard, export download | Docker PostgreSQL, `pnpm db:seed`; run `pnpm exec playwright install chromium` once |
 | `pnpm test:all` | All of the above | All of the above |
 
@@ -509,7 +530,7 @@ src/
     config/             validated environment variables
     database/           shared Prisma client
     domain/             pure business rules (state machine, import rules, lockout, paging…)
-    export/             ResultExporter interface + generic workbook
+    export/             ResultExporter interface + generic workbook + XML exporter
     http/               API wrapper, errors, upload handling, page loaders
     import/             PairingImporter interface + ExcelJS implementation
     observability/      structured logs and error reporting
@@ -558,7 +579,7 @@ Codes marked "no" are entered by the TD and become official immediately; they ar
 
 **Open questions (owner: USCC):**
 1. **OI-01:** USCC has not provided a real Swiss-Manager export. The importer maps columns by hand and assumes no layout, but **test it with a real export before the first tournament.**
-2. **OI-02:** Can USCC's Swiss-Manager version re-import results from Excel, and in what layout? Until that's known, the export is a generic workbook laid out for fast manual entry. Its layout lives in one module (`generic-result-workbook-exporter.ts`).
+2. **OI-02:** Can USCC's Swiss-Manager version re-import results from Excel or XML, and in what layout? Until that's known, the export is a generic workbook laid out for fast manual entry (`generic-result-workbook-exporter.ts`) or a neutral XML layout (`result-xml-exporter.ts`, shown in §3.2). **The XML layout is an assumption, not Swiss-Manager's own format: Swiss-Manager may refuse it until it is matched to a real Swiss-Manager XML file.** Only that one file needs to change.
 3. **OI-03:** the final result-code list and its Swiss-Manager values (proposal in §8).
 4. **OI-04:** the procedure when a player disputes a result or cannot confirm. Currently a rejection goes to the TD's dispute queue, and the TD can approve an exception with a reason.
 5. **OI-05:** hosting provider, budget, and how long to keep data (backups, uploaded files).

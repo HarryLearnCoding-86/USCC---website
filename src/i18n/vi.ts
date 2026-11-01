@@ -320,7 +320,7 @@ export const vi = {
 
   importExport: {
     importLink: "Nhập từ Excel",
-    exportLink: "Xuất Excel",
+    exportLink: "Xuất kết quả",
     importTitle: "Nhập cặp đấu từ Excel",
     stepUpload: "1. Tải tệp",
     stepSheet: "2. Chọn trang tính",
@@ -405,14 +405,17 @@ export const vi = {
     importSuccess: (gameCount: number, roundNumber: number) => `Đã nhập ${gameCount} bàn cho vòng ${roundNumber}.`,
     viewRoundLink: "Xem danh sách vòng",
     cancelReasonForReimport: (originalFilename: string) => `Nhập lại cặp đấu từ tệp ${originalFilename}`,
-    exportTitle: "Xuất kết quả ra Excel",
+    exportTitle: "Xuất kết quả",
     exportScopeLabel: "Phạm vi",
     exportScopeAll: "Toàn giải",
     exportScopeRound: (roundNumber: number) => `Vòng ${roundNumber}`,
     exportIncludeLabel: "Nội dung",
     exportIncludeOfficial: "Kết quả chính thức (mặc định)",
     exportIncludeReconciliation: "Đối soát: chờ xác nhận, có bất đồng, đã mở lại",
-    exportDownloadButton: "Tải tệp Excel",
+    exportFormatLabel: "Định dạng tệp",
+    exportFormatExcel: "Excel (.xlsx)",
+    exportFormatXml: "XML (.xml), để nhập lại vào Swiss-Manager",
+    exportDownloadButton: "Tải tệp xuống",
     // OI-02: the export layout is provisional until the Swiss-Manager re-import format is confirmed.
     exportFormatNote: "Định dạng tạm thời, chưa phải định dạng nhập lại của Swiss-Manager (cần xác nhận với trọng tài kỹ thuật).",
     workbook: {
@@ -434,6 +437,7 @@ export const vi = {
         result: "Kết quả (Swiss-Manager)",
         resultLabel: "Kết quả",
         status: "Trạng thái",
+        winner: "Người thắng",
       },
       noRows: "Không có ván nào phù hợp.",
     },
@@ -486,6 +490,17 @@ export const vi = {
     DISPUTED: "Có bất đồng",
     OFFICIAL: "Chính thức",
     REOPENED: "Đã mở lại",
+  },
+
+  /** Who won a game (src/server/domain/game-winner.ts), shown in exports and next to the winner's name. */
+  gameOutcome: {
+    WHITE_WINS: "Trắng thắng",
+    BLACK_WINS: "Đen thắng",
+    DRAW: "Hòa",
+    NO_WINNER: "Không ai thắng",
+    BYE: "Miễn đấu",
+    NO_RESULT: "Chưa có kết quả",
+    winnerMark: "Thắng",
   },
 
   /** Labels for the proposed default result codes (SRS-TOUR-06; final list is open question OI-03). */

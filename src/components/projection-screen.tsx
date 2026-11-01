@@ -132,10 +132,12 @@ export function ProjectionScreen({ initialProjection, pageIntervalSeconds }: { i
  */
 function ProjectionRow({ game }: { game: ProjectionGame }) {
   const nameWithPoints = (playerName: string, pointsText: string | null) => (pointsText === null ? playerName : `${playerName} (${pointsText})`);
+  // The winner's name turns green so the hall can see who won without reading the score against the colours.
+  const winnerClassName = (side: "WHITE" | "BLACK") => (game.officialResult?.winningSide === side ? " text-green-700" : "");
   return (
     <tr className="border-b border-gray-200" style={{ height: ROW_HEIGHT_PIXELS }} data-testid={`projection-row-${game.boardNumber}`}>
       <td className="text-[32px] font-bold">{game.boardNumber}</td>
-      <td className="truncate pr-4 text-[32px] font-semibold">{nameWithPoints(game.whiteName, game.whitePointsText)}</td>
+      <td className={`truncate pr-4 text-[32px] font-semibold${winnerClassName("WHITE")}`} data-winner={game.officialResult?.winningSide === "WHITE" || undefined}>{nameWithPoints(game.whiteName, game.whitePointsText)}</td>
       <td className="text-center" data-testid={`projection-result-${game.boardNumber}`}>
         {game.officialResult && (
           <>
@@ -144,7 +146,7 @@ function ProjectionRow({ game }: { game: ProjectionGame }) {
           </>
         )}
       </td>
-      <td className="truncate text-[32px] font-semibold">
+      <td className={`truncate text-[32px] font-semibold${winnerClassName("BLACK")}`} data-winner={game.officialResult?.winningSide === "BLACK" || undefined}>
         {game.blackName === null ? <span className="italic text-gray-600">{vi.projection.bye}</span> : nameWithPoints(game.blackName, game.blackPointsText)}
       </td>
     </tr>

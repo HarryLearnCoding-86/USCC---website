@@ -1,6 +1,6 @@
 // tests/unit/export/generic-result-workbook-exporter.test.ts
 // Unit tests for the v1 export layout (SRS-EXP-02): header block, column titles, one row per game, byes,
-// a safe file name. The workbook is read back with ExcelJS, as the TD's spreadsheet program would.
+// winner column, a safe file name. The workbook is read back with ExcelJS, as the TD's spreadsheet program would.
 
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
@@ -13,10 +13,10 @@ import { convertCellValueToText } from "@/server/import/excel-column-mapping-imp
  *
  * @param worksheet - Sheet.
  * @param rowNumber - Row.
- * @returns Cell texts of columns A–I.
+ * @returns Cell texts of columns A–J.
  */
 function readRowTexts(worksheet: ExcelJS.Worksheet, rowNumber: number): string[] {
-  return Array.from({ length: 9 }, (_unused, columnIndex) => convertCellValueToText(worksheet.getRow(rowNumber).getCell(columnIndex + 1).value));
+  return Array.from({ length: 10 }, (_unused, columnIndex) => convertCellValueToText(worksheet.getRow(rowNumber).getCell(columnIndex + 1).value));
 }
 
 describe("GenericResultWorkbookExporter", () => {
@@ -26,9 +26,12 @@ describe("GenericResultWorkbookExporter", () => {
       scopeLabel: "Vòng 1",
       content: "OFFICIAL",
       generatedAtText: "30/10/2026 20:05",
+      generatedAtIso: "2026-10-30T13:05:00.000Z",
       rows: [
-        { roundNumber: 1, boardNumber: 1, whitePlayerId: "101", whiteName: "Trắng A", blackPlayerId: "102", blackName: "Đen B", swissManagerResultValue: "1-0", resultLabelVi: "Trắng thắng", status: "OFFICIAL" },
-        { roundNumber: 1, boardNumber: 2, whitePlayerId: null, whiteName: "Trắng C", blackPlayerId: null, blackName: null, swissManagerResultValue: "+", resultLabelVi: "Miễn đấu (1 điểm)", status: "OFFICIAL" },
+        { roundNumber: 1, boardNumber: 1, whitePlayerId: "101", whiteName: "Trắng A", blackPlayerId: "102", blackName: "Đen B", swissManagerResultValue: "1-0", resultLabelVi: "Trắng thắng",
+          whiteScore: 1, blackScore: 0, outcome: "WHITE_WINS", winnerPlayerId: "101", winnerName: "Trắng A", status: "OFFICIAL" },
+        { roundNumber: 1, boardNumber: 2, whitePlayerId: null, whiteName: "Trắng C", blackPlayerId: null, blackName: null, swissManagerResultValue: "+", resultLabelVi: "Miễn đấu (1 điểm)",
+          whiteScore: 1, blackScore: 0, outcome: "BYE", winnerPlayerId: null, winnerName: null, status: "OFFICIAL" },
       ],
     });
     expect(exportedFile.fileName).toBe("giai-thu-nghiem-2026-vong-1-ket-qua-chinh-thuc.xlsx");
@@ -43,15 +46,15 @@ describe("GenericResultWorkbookExporter", () => {
     expect(readRowTexts(worksheet, 4).slice(0, 2)).toEqual([vi.importExport.workbook.generatedAtLabel, "30/10/2026 20:05"]);
     const columns = vi.importExport.workbook.columns;
     expect(readRowTexts(worksheet, EXPORT_TABLE_HEADER_ROW_NUMBER)).toEqual([
-      columns.round, columns.board, columns.whiteId, columns.whiteName, columns.blackId, columns.blackName, columns.result, columns.resultLabel, columns.status,
+      columns.round, columns.board, columns.whiteId, columns.whiteName, columns.blackId, columns.blackName, columns.result, columns.resultLabel, columns.status, columns.winner,
     ]);
-    expect(readRowTexts(worksheet, EXPORT_TABLE_HEADER_ROW_NUMBER + 1)).toEqual(["1", "1", "101", "Trắng A", "102", "Đen B", "1-0", "Trắng thắng", vi.resultStatus.OFFICIAL]);
-    expect(readRowTexts(worksheet, EXPORT_TABLE_HEADER_ROW_NUMBER + 2)).toEqual(["1", "2", "", "Trắng C", "", vi.importExport.byeLabel, "+", "Miễn đấu (1 điểm)", vi.resultStatus.OFFICIAL]);
+    expect(readRowTexts(worksheet, EXPORT_TABLE_HEADER_ROW_NUMBER + 1)).toEqual(["1", "1", "101", "Trắng A", "102", "Đen B", "1-0", "Trắng thắng", vi.resultStatus.OFFICIAL, "Trắng A"]);
+    expect(readRowTexts(worksheet, EXPORT_TABLE_HEADER_ROW_NUMBER + 2)).toEqual(["1", "2", "", "Trắng C", "", vi.importExport.byeLabel, "+", "Miễn đấu (1 điểm)", vi.resultStatus.OFFICIAL, vi.gameOutcome.BYE]);
   });
 
   it("says so when there are no rows, and names the reconciliation file differently", async () => {
     const exportedFile = await new GenericResultWorkbookExporter().buildExportFile({
-      tournamentName: "Giải", scopeLabel: "Toàn giải", content: "RECONCILIATION", generatedAtText: "", rows: [],
+      tournamentName: "Giải", scopeLabel: "Toàn giải", content: "RECONCILIATION", generatedAtText: "", generatedAtIso: "", rows: [],
     });
     expect(exportedFile.fileName).toBe("giai-toan-giai-doi-soat.xlsx");
     const workbook = new ExcelJS.Workbook();

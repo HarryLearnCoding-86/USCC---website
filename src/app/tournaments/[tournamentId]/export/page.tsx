@@ -1,6 +1,6 @@
 // src/app/tournaments/[tournamentId]/export/page.tsx
-// /tournaments/[id]/export — TD downloads results as .xlsx for one round or the whole tournament (SRS-EXP-01..05):
-// official results by default, or the separate reconciliation file. A plain GET form, so the browser handles the
+// /tournaments/[id]/export — TD downloads results for one round or the whole tournament (SRS-EXP-01..05):
+// official results by default, or the separate reconciliation file; as Excel, or as XML for Swiss-Manager (OI-02). A plain GET form, so the browser handles the
 // download with the session cookie and no client code is needed.
 
 import { vi } from "@/i18n/vi";
@@ -39,6 +39,11 @@ export default async function ExportPage({ params }: { params: Promise<{ tournam
           <legend className="mb-1">{vi.importExport.exportIncludeLabel}</legend>
           <label className="flex items-center gap-2"><input type="radio" name="include" value="official" defaultChecked className="h-5 w-5" />{vi.importExport.exportIncludeOfficial}</label>
           <label className="flex items-center gap-2"><input type="radio" name="include" value="pending" className="h-5 w-5" />{vi.importExport.exportIncludeReconciliation}</label>
+        </fieldset>
+        <fieldset className="flex flex-col gap-2 text-sm">
+          <legend className="mb-1">{vi.importExport.exportFormatLabel}</legend>
+          <label className="flex items-center gap-2"><input type="radio" name="format" value="xlsx" defaultChecked className="h-5 w-5" />{vi.importExport.exportFormatExcel}</label>
+          <label className="flex items-center gap-2"><input type="radio" name="format" value="xml" className="h-5 w-5" />{vi.importExport.exportFormatXml}</label>
         </fieldset>
         <p className="text-xs text-gray-600">{vi.importExport.exportFormatNote}</p>
         <button type="submit" className="btn-primary min-h-[44px] self-start">{vi.importExport.exportDownloadButton}</button>

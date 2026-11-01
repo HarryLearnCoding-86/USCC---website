@@ -18,6 +18,7 @@ import type { Role } from "@prisma/client";
 import { vi } from "@/i18n/vi";
 import { prisma } from "@/server/database/prisma-client";
 import { EXPORT_TABLE_HEADER_ROW_NUMBER } from "@/server/export/generic-result-workbook-exporter";
+import { ResultXmlExporter } from "@/server/export/result-xml-exporter";
 import { ApiError } from "@/server/http/api-error";
 import { convertCellValueToText, ExcelColumnMappingPairingImporter } from "@/server/import/excel-column-mapping-importer";
 import {
@@ -326,5 +327,40 @@ describe("result export of the seeded tournament", () => {
     const roundTwoExport = await buildResultExport({ tournamentId: tournament.id, roundNumber: 2, content: "OFFICIAL" });
     expect(await readExportRows(roundTwoExport.fileBytes)).toEqual([[vi.importExport.workbook.noRows, "", "", ""]]);
     await expectApiError(buildResultExport({ tournamentId: tournament.id, roundNumber: 9, content: "OFFICIAL" }), 404, "ROUND_NOT_FOUND");
+  });
+
+  it("names the winner in the Excel and XML exports, and the XML holds only OFFICIAL results (FR-09, OI-02)", async () => {
+    const tournament = await prisma.tournament.findFirstOrThrow({ where: { name: "Giải Demo USCC 2026" } });
+    const recorder = await prisma.user.findUniqueOrThrow({ where: { username: "recorder_demo" } });
+    const blackWinCode = await prisma.resultCode.findFirstOrThrow({ where: { tournamentId: tournament.id, code: "0-1" } });
+    const roundOneGames = await prisma.game.findMany({
+      where: { round: { tournamentId: tournament.id, roundNumber: 1 } },
+      include: { blackPlayer: true },
+      orderBy: { boardNumber: "asc" },
+    });
+    const [officialGame, pendingGame] = roundOneGames as [(typeof roundOneGames)[number], (typeof roundOneGames)[number]];
+    const act = (gameId: string, expectedVersion: number, actionRequest: ResultActionRequest) =>
+      prisma.$transaction((transaction) => applyResultTransition({ gameId, expectedVersion, actionRequest, actor: recorder }, transaction));
+    await act(officialGame.id, 0, { type: "SUBMIT_RESULT", resultCodeId: blackWinCode.id });
+    await act(officialGame.id, 1, { type: "CONFIRM_BY_SIDE", side: "WHITE" });
+    await act(officialGame.id, 2, { type: "CONFIRM_BY_SIDE", side: "BLACK" });
+    await act(pendingGame.id, 0, { type: "SUBMIT_RESULT", resultCodeId: blackWinCode.id });
+    const blackPlayer = officialGame.blackPlayer as NonNullable<typeof officialGame.blackPlayer>;
+
+    const excelExport = await buildResultExport({ tournamentId: tournament.id, roundNumber: 1, content: "OFFICIAL" });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Buffer.from(excelExport.fileBytes) as unknown as ArrayBuffer);
+    const worksheet = workbook.worksheets[0] as ExcelJS.Worksheet;
+    expect(convertCellValueToText(worksheet.getRow(EXPORT_TABLE_HEADER_ROW_NUMBER).getCell(10).value)).toBe(vi.importExport.workbook.columns.winner);
+    expect(convertCellValueToText(worksheet.getRow(EXPORT_TABLE_HEADER_ROW_NUMBER + 1).getCell(10).value)).toBe(blackPlayer.fullName);
+
+    const xmlExport = await buildResultExport({ tournamentId: tournament.id, roundNumber: 1, content: "OFFICIAL" }, new ResultXmlExporter());
+    const xmlText = new TextDecoder().decode(xmlExport.fileBytes);
+    expect(xmlExport.fileName.endsWith(".xml")).toBe(true);
+    expect(xmlText.match(/<Game /g)).toHaveLength(1);
+    expect(xmlText).toContain(`<Game board="${officialGame.boardNumber}" status="OFFICIAL" outcome="BLACK_WINS">`);
+    expect(xmlText).toContain(`<Winner side="BLACK"`);
+    expect(xmlText).toContain(`name="${blackPlayer.fullName}"`);
+    expect(xmlText).not.toContain(`board="${pendingGame.boardNumber}"`);
   });
 });

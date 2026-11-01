@@ -142,8 +142,8 @@ describe("Phase 3 realtime, projection and logo", () => {
     projection = await getProjectionView(fixture.tournamentId, null);
     expect(projection.roundNumber).toBe(1);
     expect(projection.games).toEqual([
-      expect.objectContaining({ boardNumber: 1, officialResult: { scoreLine: "1 – 0", labelVi: "Trắng thắng", isWithoutPlayerConfirmation: false } }),
-      expect.objectContaining({ boardNumber: 2, blackName: null, officialResult: expect.objectContaining({ isWithoutPlayerConfirmation: true }) }),
+      expect.objectContaining({ boardNumber: 1, officialResult: { scoreLine: "1 – 0", labelVi: "Trắng thắng", isWithoutPlayerConfirmation: false, winningSide: "WHITE" } }),
+      expect.objectContaining({ boardNumber: 2, blackName: null, officialResult: expect.objectContaining({ isWithoutPlayerConfirmation: true, winningSide: null }) }),
     ]);
     expect(projection.hasProvisionalPoints).toBe(true);
   });

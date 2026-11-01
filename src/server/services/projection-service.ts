@@ -5,6 +5,7 @@
 
 import { vi } from "@/i18n/vi";
 import { prisma } from "@/server/database/prisma-client";
+import { determineGameOutcome, selectWinningSide, type WinningSide } from "@/server/domain/game-winner";
 import { formatScore, formatScoreLine } from "@/server/domain/result-display";
 import { ApiError } from "@/server/http/api-error";
 
@@ -17,8 +18,8 @@ export interface ProjectionGame {
   /** null for a bye (SRS-PROJ-08). */
   blackName: string | null;
   blackPointsText: string | null;
-  /** Present only for OFFICIAL results. */
-  officialResult: { scoreLine: string; labelVi: string; isWithoutPlayerConfirmation: boolean } | null;
+  /** Present only for OFFICIAL results. winningSide: who won (game-winner.ts); null for draws, byes, double forfeits. */
+  officialResult: { scoreLine: string; labelVi: string; isWithoutPlayerConfirmation: boolean; winningSide: WinningSide | null } | null;
 }
 
 /** Everything the projection screen renders. */
@@ -103,6 +104,9 @@ export async function getProjectionView(tournamentId: string, requestedRoundNumb
             scoreLine: formatScoreLine(officialCode.whiteScore.toNumber(), officialCode.blackScore.toNumber()),
             labelVi: officialCode.labelVi,
             isWithoutPlayerConfirmation: !officialCode.requiresPlayerConfirmation,
+            winningSide: selectWinningSide(
+              determineGameOutcome({ whiteScore: officialCode.whiteScore.toNumber(), blackScore: officialCode.blackScore.toNumber(), hasBlackPlayer: game.blackPlayer !== null }),
+            ),
           }
         : null,
     };
