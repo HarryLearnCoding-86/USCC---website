@@ -104,7 +104,7 @@ The demo data from `pnpm db:seed` (see [§5](#5-setup)) gives you a TD account, 
 2. **Create arbiter accounts.** Click **Tài khoản** (`/admin/users`), then **Tạo tài khoản mới**. Usernames are 3–40 characters (lower-case letters, digits, `.`, `_`, `-`), and passwords at least 10 characters. Pick the role, then click **Tạo tài khoản**.
 3. **Create the tournament.** Click **Giải đấu** (`/tournaments`), fill in **Tạo giải đấu mới** (name, dates, venue, organizer, number of rounds 1–20, timezone, colours), then click **Tạo giải đấu**. A yellow note warns if a colour makes white text hard to read on the projector.
 4. **Check the result codes.** On the settings page, under **Mã kết quả**, confirm or adjust the nine default codes and their Swiss-Manager values. Edit a row and click **Lưu**, click **Ẩn** to hide a code you don't use, or click **Thêm mã** to add one. A code that results already use can only be hidden, relabelled or re-ordered.
-5. **Upload the logo** (optional): PNG, JPEG or SVG, at most 2 MB, under **Logo**.
+5. **Upload the logo** (optional): PNG, JPEG or SVG, at most 2 MB, under **Logo**. It appears next to the tournament name in the tournament lists, at the top of every tournament page and on the projection screen.
 
 ### 3.2 Technical arbiter: each round
 

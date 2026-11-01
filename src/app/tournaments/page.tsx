@@ -8,6 +8,7 @@ import { requirePageUser } from "@/server/auth/page-guards";
 import { queryTournamentList } from "@/server/services/tournament-query-service";
 import { parseTournamentListQuery } from "@/server/validation/tournament-list-query-schema";
 import { PageShell } from "@/components/page-shell";
+import { TournamentLogo } from "@/components/tournament-logo";
 import { TournamentListFilterForm, TournamentListPager } from "@/components/tournament-list-controls";
 import { EMPTY_TOURNAMENT_FORM_VALUES, TournamentForm } from "@/components/tournament-form";
 
@@ -28,12 +29,15 @@ export default async function TournamentsPage({ searchParams }: { searchParams: 
       <ul className="flex flex-col gap-2" data-testid="tournament-list">
         {tournamentPage.items.map((tournament) => (
           <li key={tournament.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3">
-            <div>
-              <p className="font-medium">{tournament.name}</p>
-              <p className="text-sm text-gray-600">{vi.home.dateRange(tournament.startDateText, tournament.endDateText)}</p>
-              <p className="text-xs text-gray-500">
-                {vi.tournamentList.gameCounts(tournament.winCount, tournament.drawCount)} · {vi.tournamentList.tournamentId(tournament.id)}
-              </p>
+            <div className="flex items-center gap-3">
+              <TournamentLogo logoUrl={tournament.logoUrl} size="list" />
+              <div>
+                <p className="font-medium">{tournament.name}</p>
+                <p className="text-sm text-gray-600">{vi.home.dateRange(tournament.startDateText, tournament.endDateText)}</p>
+                <p className="text-xs text-gray-500">
+                  {vi.tournamentList.gameCounts(tournament.winCount, tournament.drawCount)} · {vi.tournamentList.tournamentId(tournament.id)}
+                </p>
+              </div>
             </div>
             <div className="flex gap-2 text-sm">
               <Link className="btn-secondary min-h-[44px] inline-flex items-center" href={`/tournaments/${tournament.id}/console`}>{vi.home.consoleLink}</Link>

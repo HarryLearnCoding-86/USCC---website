@@ -7,6 +7,7 @@ import { vi } from "@/i18n/vi";
 import { prisma } from "@/server/database/prisma-client";
 import { determineGameOutcome, selectWinningSide, type WinningSide } from "@/server/domain/game-winner";
 import { formatScore, formatScoreLine } from "@/server/domain/result-display";
+import { buildTournamentLogoUrl } from "@/server/domain/tournament-logo-url";
 import { ApiError } from "@/server/http/api-error";
 
 /** One projected board. */
@@ -118,7 +119,7 @@ export async function getProjectionView(tournamentId: string, requestedRoundNumb
     timezone: tournament.timezone,
     primaryColor: tournament.primaryColor,
     secondaryColor: tournament.secondaryColor,
-    logoUrl: tournament.logoStorageKey ? `/api/tournaments/${tournament.id}/logo?v=${encodeURIComponent(tournament.logoStorageKey)}` : null,
+    logoUrl: buildTournamentLogoUrl(tournament.id, tournament.logoStorageKey),
     roundNumber,
     roundNumbers: tournament.rounds.map((round) => round.roundNumber),
     hasProvisionalPoints: projectionGames.some((game) => game.whitePointsText !== null || game.blackPointsText !== null),

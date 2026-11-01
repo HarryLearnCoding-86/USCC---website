@@ -30,7 +30,7 @@ export default async function TournamentSettingsPage({ params }: { params: Promi
 
   return (
     <PageShell signedInUser={signedInUser} isWide>
-      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentId} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} />
+      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentId} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} logoStorageKey={tournamentSummary.logoStorageKey} />
       <section className="mb-8">
         <h2 className="mb-2 text-lg font-semibold">{vi.tournaments.detailsHeading}</h2>
         <TournamentForm

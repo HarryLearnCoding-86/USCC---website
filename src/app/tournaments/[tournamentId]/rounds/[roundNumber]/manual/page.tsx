@@ -24,7 +24,7 @@ export default async function ManualPairingPage({ params }: { params: Promise<{ 
   );
   return (
     <PageShell signedInUser={signedInUser} isWide>
-      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentSummary.id} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} />
+      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentSummary.id} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} logoStorageKey={tournamentSummary.logoStorageKey} />
       <h2 className="mb-3 text-lg font-semibold">{vi.manualPairing.pageTitle(roundNumber)}</h2>
       <ManualPairingEditor tournamentId={tournamentSummary.id} roundNumber={roundNumber} games={games} />
     </PageShell>

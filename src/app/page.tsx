@@ -9,6 +9,7 @@ import { hasPermission } from "@/server/auth/role-permissions";
 import { queryTournamentList } from "@/server/services/tournament-query-service";
 import { parseTournamentListQuery } from "@/server/validation/tournament-list-query-schema";
 import { AppHeader } from "@/components/app-header";
+import { TournamentLogo } from "@/components/tournament-logo";
 import { TournamentListFilterForm, TournamentListPager } from "@/components/tournament-list-controls";
 
 /**
@@ -33,7 +34,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <ul className="flex flex-col gap-3" data-testid="tournament-list">
           {tournamentPage.items.map((tournament) => (
             <li key={tournament.id} className="rounded-lg border border-gray-200 bg-white p-4">
-              <h2 className="text-lg font-semibold">{tournament.name}</h2>
+              <div className="flex items-center gap-3">
+                <TournamentLogo logoUrl={tournament.logoUrl} size="list" />
+                <h2 className="text-lg font-semibold">{tournament.name}</h2>
+              </div>
               <p className="text-sm text-gray-600">
                 {vi.home.dateRange(tournament.startDateText, tournament.endDateText)}
                 {tournament.venue ? ` · ${tournament.venue}` : ""}

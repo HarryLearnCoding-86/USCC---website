@@ -5,6 +5,7 @@
 import { prisma } from "@/server/database/prisma-client";
 import { formatCalendarDate } from "@/server/domain/date-time-format";
 import { determineGameOutcome } from "@/server/domain/game-winner";
+import { buildTournamentLogoUrl } from "@/server/domain/tournament-logo-url";
 import {
   selectTournamentListPage,
   type TournamentListFields,
@@ -20,6 +21,8 @@ export interface TournamentListItem {
   startDateText: string;
   endDateText: string;
   roundNumbers: number[];
+  /** Logo shown next to the name, or null when none was uploaded. */
+  logoUrl: string | null;
 }
 
 /**
@@ -39,6 +42,7 @@ export async function listTournamentsWithRounds(): Promise<TournamentListItem[]>
     startDateText: formatCalendarDate(tournament.startDate),
     endDateText: formatCalendarDate(tournament.endDate),
     roundNumbers: tournament.rounds.map((round) => round.roundNumber),
+    logoUrl: buildTournamentLogoUrl(tournament.id, tournament.logoStorageKey),
   }));
 }
 
@@ -96,6 +100,7 @@ export async function queryTournamentList(listQuery: TournamentListQuery): Promi
     startDateText: formatCalendarDate(tournament.startDate),
     endDateText: formatCalendarDate(tournament.endDate),
     roundNumbers: tournament.rounds.map((round) => round.roundNumber),
+    logoUrl: buildTournamentLogoUrl(tournament.id, tournament.logoStorageKey),
     winCount: countsByTournament.get(tournament.id)?.winCount ?? 0,
     drawCount: countsByTournament.get(tournament.id)?.drawCount ?? 0,
   }));

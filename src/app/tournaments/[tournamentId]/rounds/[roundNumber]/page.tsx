@@ -26,7 +26,7 @@ export default async function RoundPage({ params }: { params: Promise<{ tourname
   );
   return (
     <PageShell signedInUser={signedInUser}>
-      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentSummary.id} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} />
+      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentSummary.id} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} logoStorageKey={tournamentSummary.logoStorageKey} />
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">{vi.rounds.roundTitle(roundNumber)}</h2>
         <LiveRefresh tournamentId={tournamentSummary.id} timezone={tournamentSummary.timezone} roundNumber={roundNumber} />

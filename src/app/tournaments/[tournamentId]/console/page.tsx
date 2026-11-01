@@ -34,7 +34,7 @@ export default async function ConsolePage({
   const overview = await loadOrNotFound(() => getConsoleOverview(tournamentId, roundNumber));
   return (
     <PageShell signedInUser={signedInUser} isWide>
-      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentId} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} />
+      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentId} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} logoStorageKey={tournamentSummary.logoStorageKey} />
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold">{vi.console.pageTitle}</h2>
         <LiveRefresh tournamentId={tournamentId} timezone={tournamentSummary.timezone} />

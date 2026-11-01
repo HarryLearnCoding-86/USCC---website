@@ -80,6 +80,15 @@ describe("queryTournamentList", () => {
     expect(byDraws.items[0]?.name).toBe(DEMO_TOURNAMENT_NAME);
   });
 
+  it("gives each tournament its logo URL, or null when it has none", async () => {
+    const demoTournament = await prisma.tournament.findFirstOrThrow({ where: { name: DEMO_TOURNAMENT_NAME } });
+    await prisma.tournament.update({ where: { id: demoTournament.id }, data: { logoStorageKey: "tournaments/demo/logo.png" } });
+    const byWins = await queryTournamentList({ searchText: "", sortOption: "wins-desc", pageNumber: 1 });
+    expect(byWins.items[0]?.logoUrl).toBe(`/api/tournaments/${demoTournament.id}/logo?v=tournaments%2Fdemo%2Flogo.png`);
+    expect(byWins.items.slice(1).every((tournament) => tournament.logoUrl === null)).toBe(true);
+    await prisma.tournament.update({ where: { id: demoTournament.id }, data: { logoStorageKey: null } });
+  });
+
   it("searches name and venue without diacritics", async () => {
     const byName = await queryTournamentList({ searchText: "CO NHANH so 05", sortOption: "name-asc", pageNumber: 1 });
     expect(byName.items.map((tournament) => tournament.name)).toEqual(["Giải Cờ Nhanh Số 05"]);
