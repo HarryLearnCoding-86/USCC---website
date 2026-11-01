@@ -48,6 +48,11 @@ test("a TD signs in, opens account management and signs out", async ({ page }) =
   await page.goto("/login");
   await submitLoginForm(page, TECHNICAL_USERNAME, TECHNICAL_PASSWORD);
   await expect(page.getByTestId("signed-in-user")).toContainText(vi.roles.TECHNICAL);
+  // The home list shows 15 tournaments per page, newest first; earlier e2e runs leave newer tournaments behind,
+  // so find the demo tournament through the search box rather than assuming it is on page 1.
+  await expect(page.getByTestId("tournament-list")).toBeVisible();
+  await page.getByLabel(vi.tournamentList.searchLabel).fill("Giải Demo USCC 2026");
+  await page.getByRole("button", { name: vi.tournamentList.applyButton }).click();
   await expect(page.getByRole("heading", { name: "Giải Demo USCC 2026" })).toBeVisible();
 
   await page.getByRole("link", { name: vi.nav.users }).click();

@@ -93,6 +93,11 @@ The app does **not** replace Swiss-Manager or Chess-Results. Swiss-Manager still
 
 The demo data from `pnpm db:seed` (see [§5](#5-setup)) gives you a TD account, a recorder account and a demo tournament to try every step below.
 
+**Finding a tournament.** The home page (`/`) and **Giải đấu** (`/tournaments`) list tournaments newest first, 15 per page, with **Trang trước** / **Trang sau** below the list. Each tournament shows its number of official won and drawn games.
+- **Tìm giải đấu:** type part of the name, venue or organizer. Accents and capitals don't matter, so `co nhanh` finds "Cờ Nhanh".
+- **Sắp xếp theo:** date (newest or oldest first), name (A–Z), tournament ID, most won games or most drawn games. Byes don't count as games, and only official results are counted.
+- Click **Áp dụng** to search or re-sort, and **Xóa bộ lọc** to go back to the default list. The address bar keeps the search, order and page (`?q=…&sort=…&page=…`), so a link opens the same view.
+
 ### 3.1 Technical arbiter: before the tournament
 
 1. **Sign in** at `/login` with a TECHNICAL account.
@@ -215,7 +220,7 @@ The app was built in five phases (AGENT_PROMPT.md §4). Each ended with lint, ty
 **Goal:** get pairings in from Swiss-Manager's Excel files, and results back out.
 - **Import wizard:** upload, sheet and header row, a column mapping you choose by hand (no layout assumed), preview with per-cell errors, row exclusion, player choice for ambiguous names, a diff with replace protection, then an all-or-nothing confirm. Every import is logged.
 - **Export:** a header block plus one row per game, official results only by default, and a separate reconciliation file. The layout lives in one module, ready for the confirmed Swiss-Manager format.
-- **Added after Phase 5:** the winner of each game (export column, round-list label, green name on the projection) and an XML export option (`result-xml-exporter.ts`).
+- **Added after Phase 5:** the winner of each game (export column, round-list label, green name on the projection) and an XML export option (`result-xml-exporter.ts`); search, sort and 15-per-page paging on the tournament lists (`tournament-list-rules.ts`).
 - **Test fixture:** the Chess-Results sample contains real names, so tests use an anonymized copy with the identical layout.
 - **Result:** 216 unit, 65 integration and 21 browser tests:
   - the sample imports by manual mapping (40 boards);
@@ -454,9 +459,9 @@ On a developer machine, `sh docker/drill/run-drill-in-container.sh` does the sam
 |---|---|---|
 | `pnpm lint` | ESLint, zero warnings allowed | — |
 | `pnpm typecheck` | TypeScript strict type-check | — |
-| `pnpm test:unit` | 235 tests of pure logic: every result action × status × role, confirmation rules, permissions, login lockout, CSRF, import rules, export layouts (Excel and XML), winner rule, paging, offline sync engine | — |
-| `pnpm test:integration` | 76 tests against a real test database: sessions, accounts, idempotency, the result lifecycle (including simultaneous submits), live notifications, projection filtering, imports and exports, CSRF and lockout through the real routes | Docker PostgreSQL |
-| `pnpm test:e2e` | 21 Playwright browser tests at phone (390×844), laptop (1440×900) and projector (1920×1080) sizes: the full confirmation and dispute flows, projection latency, offline sync, the import wizard, export download | Docker PostgreSQL, `pnpm db:seed`; run `pnpm exec playwright install chromium` once |
+| `pnpm test:unit` | 244 tests of pure logic: every result action × status × role, confirmation rules, permissions, login lockout, CSRF, import rules, export layouts (Excel and XML), winner rule, tournament list search/sort/paging, paging, offline sync engine | — |
+| `pnpm test:integration` | 79 tests against a real test database: sessions, accounts, idempotency, the result lifecycle (including simultaneous submits), live notifications, projection filtering, imports and exports, tournament list counts and paging, CSRF and lockout through the real routes | Docker PostgreSQL |
+| `pnpm test:e2e` | 23 Playwright browser tests at phone (390×844), laptop (1440×900) and projector (1920×1080) sizes: the full confirmation and dispute flows, projection latency, offline sync, the import wizard, export download, tournament list search | Docker PostgreSQL, `pnpm db:seed`; run `pnpm exec playwright install chromium` once |
 | `pnpm test:all` | All of the above | All of the above |
 
 `pnpm build` checks a production build. Playwright saves traces, screenshots and videos of failures in `test-results/`.
@@ -593,6 +598,7 @@ Codes marked "no" are entered by the TD and become official immediately; they ar
 - **Login lockout:** it is per username. Someone guessing a real arbiter's password can lock that arbiter out for 10 minutes.
 - **Byes and forfeits:** only the TD can enter them. Editing a result to such a code returns it to pending, and the TD then approves it.
 - **Pairing changes:** a board that has a result can't be edited or deleted until the TD cancels the result. A board with result history can never be deleted.
+- **Tournament list size:** the list loads every tournament and sorts it in the app, which suits club scale (up to a few hundred tournaments). Thousands would need sorting and paging in the database.
 - **No delete feature:** tournaments and results that have audit history are protected by the append-only trigger.
 - **Sentry is not installed:** a new dependency awaiting approval. Errors are logged as JSON lines with a request ID.
 - **Windows builds:** `pnpm build` on Windows produces a normal build. The Docker image uses Next.js standalone output, which needs Linux, or Windows Developer Mode.
