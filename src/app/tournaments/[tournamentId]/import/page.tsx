@@ -21,7 +21,7 @@ export default async function ImportPage({ params }: { params: Promise<{ tournam
   const tournamentSummary = await loadOrNotFound(() => getTournamentSummary(tournamentId));
   return (
     <PageShell signedInUser={signedInUser} isWide>
-      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentId} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} />
+      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentId} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} logoStorageKey={tournamentSummary.logoStorageKey} />
       <h2 className="mb-3 text-lg font-semibold">{vi.importExport.importTitle}</h2>
       <PairingImportWizard tournamentId={tournamentId} roundNumbers={tournamentSummary.roundNumbers} />
     </PageShell>

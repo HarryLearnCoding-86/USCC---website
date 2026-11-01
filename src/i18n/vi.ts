@@ -74,6 +74,30 @@ export const vi = {
     consoleLink: "Bảng điều khiển",
   },
 
+  /** Search, sort and paging controls on the tournament lists (home page and /tournaments). */
+  tournamentList: {
+    searchLabel: "Tìm giải đấu",
+    searchPlaceholder: "Tên giải, địa điểm hoặc đơn vị tổ chức",
+    sortLabel: "Sắp xếp theo",
+    sortOptions: {
+      "date-desc": "Ngày thi đấu (mới nhất)",
+      "date-asc": "Ngày thi đấu (cũ nhất)",
+      "name-asc": "Tên giải (A–Z)",
+      "id-asc": "Mã giải (ID)",
+      "wins-desc": "Nhiều ván thắng nhất",
+      "draws-desc": "Nhiều ván hòa nhất",
+    },
+    applyButton: "Áp dụng",
+    clearLink: "Xóa bộ lọc",
+    noMatches: "Không có giải đấu nào phù hợp.",
+    shownRange: (firstNumber: number, lastNumber: number, matchingCount: number) => `Giải ${firstNumber}–${lastNumber} trên tổng ${matchingCount} giải`,
+    pageStatus: (pageNumber: number, pageCount: number) => `Trang ${pageNumber}/${pageCount}`,
+    previousPage: "Trang trước",
+    nextPage: "Trang sau",
+    gameCounts: (winCount: number, drawCount: number) => `${winCount} ván thắng · ${drawCount} ván hòa`,
+    tournamentId: (tournamentId: string) => `Mã: ${tournamentId}`,
+  },
+
   tournaments: {
     pageTitle: "Quản lý giải đấu",
     createHeading: "Tạo giải đấu mới",

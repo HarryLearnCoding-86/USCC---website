@@ -23,7 +23,7 @@ export default async function ExportPage({ params }: { params: Promise<{ tournam
   const controlClassName = "min-h-[44px] rounded-md border border-gray-300 px-3";
   return (
     <PageShell signedInUser={signedInUser}>
-      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentId} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} />
+      <TournamentNavigation signedInUser={signedInUser} tournamentId={tournamentId} tournamentName={tournamentSummary.name} roundNumbers={tournamentSummary.roundNumbers} logoStorageKey={tournamentSummary.logoStorageKey} />
       <h2 className="mb-3 text-lg font-semibold">{vi.importExport.exportTitle}</h2>
       <form method="GET" action={`/api/tournaments/${tournamentId}/export`} className="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-4">
         <label className="flex flex-col gap-1 text-sm">
